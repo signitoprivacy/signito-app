@@ -1,9 +1,9 @@
 # signito-app
 
+**Website:** [signito.org](https://signito.org)
+
 Signito Shield — non-custodial transaction privacy dApp on Solana.
 
-**Live:** [app.signito.org](https://app.signito.org)  
-**Docs:** [docs.signito.org](https://docs.signito.org)  
 **Program ID:** `9PibgJMUa3zXVd7YWJEJ8UQ14A7z2J3qZ7QDvRW38XeD`
 
 Built with **React 18 + Vite**. All signing done via Phantom wallet. RPC calls proxied server-side — the Helius API key is never exposed to the browser.
