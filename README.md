@@ -2,8 +2,11 @@
 
 Signito Shield — non-custodial transaction privacy dApp on Solana.
 
-Built with **React 18 + Vite**, connected to the Signito Vault on-chain program.  
-All signing is done via Phantom wallet. RPC calls are proxied server-side — the Helius API key is never exposed to the browser.
+**Live:** [app.signito.org](https://app.signito.org)  
+**Docs:** [docs.signito.org](https://docs.signito.org)  
+**Program ID:** `9PibgJMUa3zXVd7YWJEJ8UQ14A7z2J3qZ7QDvRW38XeD`
+
+Built with **React 18 + Vite**. All signing done via Phantom wallet. RPC calls proxied server-side — the Helius API key is never exposed to the browser.
 
 ---
 
@@ -11,9 +14,9 @@ All signing is done via Phantom wallet. RPC calls are proxied server-side — th
 
 | Feature | Description |
 |---|---|
-| **SafeVault** | Shield SOL into a non-custodial vault. Withdraw anytime using your vault code — no private keys stored anywhere. |
+| **SafeVault** | Shield SOL into a non-custodial vault using a passphrase. Withdraw anytime with your vault code — nothing stored server-side. |
 | **StealthSend** | Send SOL to a fresh address with no on-chain link between sender and recipient. |
-| **AirSign** | Issue offline Ed25519 vouchers, shareable via QR or link. Recipient claims without internet. |
+| **AirSign** | Issue offline Ed25519 vouchers shareable via QR or link. Recipient claims without internet at issuance time. |
 
 ---
 
@@ -43,12 +46,12 @@ signito-app/
     pages/          Route-level page components
     components/     Shared UI components (NavBar, Sidebar, etc.)
     lib/
-      ots.ts        PBKDF2 + SHA-256 OTS chain derivation (client-side)
+      ots.ts        PBKDF2 + SHA-256 OTS chain derivation (client-side only)
       wallet.tsx    Phantom wallet connection
     index.css       Global styles (Tailwind CSS v4)
   public/           Static assets (logo, token images, OG image)
   lib/
-    api-client-react/   Generated React Query hooks (@workspace/api-client-react)
+    api-client-react/   Generated React Query hooks
 ```
 
 ---
@@ -69,14 +72,11 @@ signito-app/
 ## Getting Started
 
 ```bash
-# Install dependencies
 pnpm install
 
 # Set environment variables
-cp .env.example .env
-# VITE_API_URL=http://localhost:8080
+echo "VITE_API_URL=https://api.signito.org" > .env
 
-# Run dev server
 pnpm dev
 ```
 
@@ -93,7 +93,17 @@ pnpm build
 
 | Variable | Description |
 |---|---|
-| `VITE_API_URL` | URL of the signito-api server |
+| `VITE_API_URL` | URL of the signito-api server (e.g. `https://api.signito.org`) |
+
+---
+
+## Related Repositories
+
+| Repo | Description |
+|---|---|
+| [signito-programs](https://github.com/signitoprivacy/signito-programs) | On-chain Anchor/Rust program |
+| [signito-api](https://github.com/signitoprivacy/signito-api) | Backend API server |
+| [signito-docs](https://github.com/signitoprivacy/signito-docs) | Protocol documentation |
 
 ---
 
