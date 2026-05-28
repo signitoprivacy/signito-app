@@ -1,18 +1,10 @@
 import React from "react";
 import { LandingNavBar } from "../components/LandingNavBar";
 import { Footer } from "../components/Footer";
-import sketchPool from "../assets/sketch-stealthsend-pool.png";
-import sketchZk from "../assets/sketch-zkproofs-circuit.png";
-import signitoLogoUrl from "@assets/signito-logo-nobg.png";
+import { MountainDivider } from "../components/MountainDivider";
+import sketchPool from "../assets/sketch-stealthsend-pool.jpg";
+import sketchZk from "../assets/sketch-zkproofs-circuit.jpg";
 
-const MountainDivider = () => (
-  <svg className="absolute top-0 left-0 w-full pointer-events-none"
-    style={{ transform: "translateY(-99%)", overflow: "visible" }}
-    viewBox="0 0 1440 120" preserveAspectRatio="none" fill="#FFFFFF"
-    overflow="visible" xmlns="http://www.w3.org/2000/svg">
-    <path d="M0,120 L0,90 L180,10 L360,80 L540,5 L720,75 L900,0 L1080,70 L1200,20 L1350,-130 L1440,-60 L1440,120 Z" />
-  </svg>
-);
 
 export default function StealthSendDetailPage() {
   return (
@@ -23,7 +15,6 @@ export default function StealthSendDetailPage() {
         {/* Hero - dark */}
         <div className="border-b border-[#2A2A2A] relative overflow-hidden min-h-screen flex flex-col">
           <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: "radial-gradient(circle, #2A2A2A 1px, transparent 1px)", backgroundSize: "36px 36px" }} />
-          <img src={signitoLogoUrl} alt="" aria-hidden className="absolute right-[-80px] bottom-[-80px] w-[520px] opacity-[0.035] pointer-events-none select-none" />
           <div className="max-w-[3200px] mx-auto px-8 md:px-16 pt-[20vh] pb-20 grid grid-cols-1 md:grid-cols-2 gap-12 items-center relative z-10 w-full">
             <div>
               <div className="inline-block font-['JetBrains_Mono'] text-[#FF6B00] text-xs tracking-[0.2em] uppercase border border-[#FF6B00]/30 px-3 py-1 mb-8">Feature 02</div>
@@ -110,6 +101,44 @@ export default function StealthSendDetailPage() {
 
           <div className="border-b border-[#E0E0E0]">
             <div className="max-w-[1200px] mx-auto px-8 md:px-16 py-20">
+              <h2 className="font-['Space_Grotesk'] text-3xl font-bold mb-4">Privacy is one layer. Security is another.</h2>
+              <p className="text-[#888888] font-['Inter'] text-sm mb-12 max-w-2xl">StealthSend breaks the on-chain link between deposit and withdrawal. That is the privacy guarantee. But Signito adds a second, independent guarantee: the funds cannot be moved at all without the vault code.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-0 border-2 border-[#0A0A0A]">
+                <div className="p-10 border-r-2 border-[#0A0A0A]">
+                  <div className="font-['JetBrains_Mono'] text-[#FF6B00] text-xs mb-3">PRIVACY</div>
+                  <h3 className="font-['Space_Grotesk'] font-bold text-[#0A0A0A] text-xl mb-4">No on-chain link</h3>
+                  <p className="text-[#555555] font-['Inter'] text-sm leading-relaxed mb-4">
+                    The ZK proof proves membership in the deposit set without revealing which deposit is yours. An observer watching the Solana ledger cannot connect your receiving address to your sending address.
+                  </p>
+                  <p className="text-[#888888] font-['Inter'] text-xs leading-relaxed">
+                    This is the standard privacy guarantee, shared by all ZK pool protocols.
+                  </p>
+                </div>
+                <div className="p-10">
+                  <div className="font-['JetBrains_Mono'] text-[#FF6B00] text-xs mb-3">SECURITY</div>
+                  <h3 className="font-['Space_Grotesk'] font-bold text-[#0A0A0A] text-xl mb-4">Key leak does not drain funds</h3>
+                  <p className="text-[#555555] font-['Inter'] text-sm leading-relaxed mb-4">
+                    Funds deposited via StealthSend sit behind the OTS vault. Even if your private key is exposed in a phishing attack or database breach, an attacker cannot construct a valid withdrawal without the vault code. The key and the vault code are completely separate secrets.
+                  </p>
+                  <p className="text-[#888888] font-['Inter'] text-xs leading-relaxed">
+                    This is the additional security guarantee that most privacy protocols do not provide.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-6 border border-[#E0E0E0] px-8 py-6 font-['JetBrains_Mono'] text-xs">
+                <span className="text-[#888888]">To drain a StealthSend vault:</span>
+                <span className="text-[#0A0A0A] ml-4">private key</span>
+                <span className="text-[#CCCCCC] mx-2">+</span>
+                <span className="text-[#0A0A0A]">vault code</span>
+                <span className="text-[#CCCCCC] mx-2">+</span>
+                <span className="text-[#0A0A0A]">correct OTS chain depth</span>
+                <span className="text-[#888888] ml-4">-- the vault code is never stored or transmitted</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-b border-[#E0E0E0]">
+            <div className="max-w-[1200px] mx-auto px-8 md:px-16 py-20">
               <h2 className="font-['Space_Grotesk'] text-3xl font-bold mb-12">Technical specifications</h2>
               <div className="border border-[#E0E0E0] font-['JetBrains_Mono'] text-sm divide-y divide-[#E0E0E0]">
                 {[
@@ -121,6 +150,7 @@ export default function StealthSendDetailPage() {
                   ["Anonymity set", "All deposits currently in the pool"],
                   ["Note format", "secret + nullifier, 32 bytes each"],
                   ["Proof size", "192 bytes (constant, Groth16 property)"],
+                  ["Protocol fee", "0.15% per withdrawal, enforced on-chain"],
                 ].map(([k, v]) => (
                   <div key={k} className="flex justify-between px-6 py-4">
                     <span className="text-[#888888]">{k}</span>

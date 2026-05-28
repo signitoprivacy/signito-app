@@ -1,17 +1,9 @@
 import React from "react";
 import { LandingNavBar } from "../components/LandingNavBar";
 import { Footer } from "../components/Footer";
-import sketchOts from "../assets/sketch-otpchain-flow.png";
-import signitoLogoUrl from "@assets/signito-logo-nobg.png";
+import { MountainDivider } from "../components/MountainDivider";
+import sketchOts from "../assets/sketch-otpchain-flow.jpg";
 
-const MountainDivider = () => (
-  <svg className="absolute top-0 left-0 w-full pointer-events-none"
-    style={{ transform: "translateY(-99%)", overflow: "visible" }}
-    viewBox="0 0 1440 120" preserveAspectRatio="none" fill="#FFFFFF"
-    overflow="visible" xmlns="http://www.w3.org/2000/svg">
-    <path d="M0,120 L0,90 L180,10 L360,80 L540,5 L720,75 L900,0 L1080,70 L1200,20 L1350,-130 L1440,-60 L1440,120 Z" />
-  </svg>
-);
 
 export default function LearnOtpChainPage() {
   return (
@@ -22,13 +14,12 @@ export default function LearnOtpChainPage() {
         {/* Hero - dark */}
         <div className="border-b border-[#2A2A2A] relative overflow-hidden min-h-screen flex flex-col">
           <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: "radial-gradient(circle, #2A2A2A 1px, transparent 1px)", backgroundSize: "36px 36px" }} />
-          <img src={signitoLogoUrl} alt="" aria-hidden className="absolute right-[-80px] bottom-[-80px] w-[520px] opacity-[0.035] pointer-events-none select-none" />
           <div className="max-w-[3200px] mx-auto px-8 md:px-16 pt-[20vh] pb-20 grid grid-cols-1 md:grid-cols-2 gap-12 items-center relative z-10 w-full">
             <div>
               <div className="inline-block font-['JetBrains_Mono'] text-[#FF6B00] text-xs tracking-[0.2em] uppercase border border-[#FF6B00]/30 px-3 py-1 mb-8">Learn</div>
               <h1 className="font-['Space_Grotesk'] text-5xl md:text-7xl font-bold mb-6 leading-tight">OTS Protocol</h1>
               <p className="text-[#888888] font-['Inter'] text-lg max-w-xl leading-relaxed">
-                The OTS Protocol is built on a list of single-use signatures that can only be consumed in order. Once a signature is used, it is gone. You cannot fake the next one without knowing the original seed. This is how SafeVault authorizes withdrawals without your private key.
+                The OTS Protocol is built on a list of single-use signatures that can only be consumed in order. Once a signature is used, it is gone. You cannot fake the next one without knowing the original seed. This is how Shielded Vault authorizes withdrawals without your private key.
               </p>
             </div>
             <div className="hidden md:block border border-[#1A1A1A] overflow-hidden">

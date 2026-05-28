@@ -15,8 +15,11 @@ function FeaturesMenu({ onClose }: { onClose: () => void }) {
           <p className="font-['Space_Grotesk'] font-bold text-white text-sm tracking-[0.15em] uppercase border-b-2 border-[#FF6B00] pb-2 mb-4 w-fit">
             Features
           </p>
-          <p className="text-[#555555] font-['Inter'] text-sm leading-relaxed mb-6">
+          <p className="text-[#555555] font-['Inter'] text-sm leading-relaxed mb-4">
             Shield assets. Send privately. Sign offline.
+          </p>
+          <p className="text-[#3A3A3A] font-['JetBrains_Mono'] text-xs leading-relaxed mb-6 border-l-2 border-[#FF6B00]/40 pl-3">
+            Private key compromised? Shielded funds still require the vault code. Two independent secrets.
           </p>
           <Link href="/#features" className="text-[#FF6B00] font-['Space_Grotesk'] font-bold text-xs no-underline hover:text-white transition-colors" onClick={onClose}>
             See all features
@@ -27,7 +30,7 @@ function FeaturesMenu({ onClose }: { onClose: () => void }) {
         {[
           {
             tag: "OTS",
-            title: "SafeVault",
+            title: "Shielded Vault",
             desc: "Your key stays cold. Withdrawals run on OTS reveals.",
             href: "/features/safevault",
             sub: "OTS Protocol shield",
@@ -187,11 +190,11 @@ function DevelopersMenu({ onClose }: { onClose: () => void }) {
           <p className="text-[#555555] font-['Inter'] text-sm leading-relaxed mb-6">
             The OpenAPI spec is the source of truth. All endpoints are documented and codegen-ready. Integrate via REST from any language.
           </p>
-          <Link href="/docs/" onClick={onClose}
+          <a href="/docs/"
             className="btn-secondary text-xs !py-2 !px-4 w-fit inline-flex"
           >
             Open Docs
-          </Link>
+          </a>
         </div>
 
         {/* Developer pages */}

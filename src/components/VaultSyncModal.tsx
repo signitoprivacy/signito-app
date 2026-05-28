@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { PublicKey } from "@solana/web3.js";
-import { fetchVaultState } from "@workspace/program";
+import { fetchUserState } from "@workspace/program";
 import { useWallet } from "../lib/wallet";
 import { validateVaultCode, syncOtsGeneration } from "../lib/ots";
 
@@ -28,7 +28,17 @@ export function VaultSyncModal({ onClose }: VaultSyncModalProps) {
     setStatus({ kind: "loading", gen: 0 });
 
     try {
-      const vaultState = await fetchVaultState(connection, new PublicKey(publicKey));
+      // Fetch vault from API to get stokenAccount, then read user_state on-chain
+      const apiRes = await fetch(`/api/vault/${publicKey}`);
+      const apiData = await apiRes.json() as { vault?: { stokenAccount?: string } | null };
+      const stokenAccountStr = apiData?.vault?.stokenAccount;
+      if (!stokenAccountStr) {
+        setStatus({ kind: "no_vault" });
+        return;
+      }
+
+      const stokenAtaPk = new PublicKey(stokenAccountStr);
+      const vaultState = await fetchUserState(connection, stokenAtaPk);
       if (!vaultState) {
         setStatus({ kind: "no_vault" });
         return;
@@ -149,7 +159,7 @@ export function VaultSyncModal({ onClose }: VaultSyncModalProps) {
             )}
             {status.chainDepth === 0 && (
               <p className="text-red-400 text-xs font-['JetBrains_Mono']">
-                Chain exhausted. Go to SafeVault, OTS tab to refresh.
+                Chain exhausted. Go to Shielded Vault, OTS tab to refresh.
               </p>
             )}
           </div>

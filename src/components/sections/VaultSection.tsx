@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useCluster } from "../../main";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { useWallet } from "../../lib/wallet";
 import {
@@ -10,7 +11,7 @@ import {
   useUnshieldVault,
 } from "@workspace/api-client-react";
 import { validateVaultCode, deriveOtsHash, deriveOtsPreimage, deriveOtsTip, syncOtsGeneration } from "../../lib/ots";
-import { fetchVaultState, buildRefreshOtsIx, buildVersionedTx } from "@workspace/program";
+import { fetchUserState } from "@workspace/program";
 import { TokenSelect } from "../TokenSelect";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -34,6 +35,7 @@ function OtsTab({
   onRefreshComplete?: () => void;
 }) {
   const { connection, signTransaction } = useWallet();
+  const { cluster } = useCluster();
   const [vaultCode, setVaultCode] = useState("");
   const [syncState, setSyncState] = useState<OtsSyncState>({ kind: "idle" });
   const [newDepth, setNewDepth] = useState(32);
@@ -47,7 +49,14 @@ function OtsTab({
     if (!publicKey || !connection || !isValidCode) return;
     setSyncState({ kind: "detecting" });
     try {
-      const onChain = await fetchVaultState(connection, new PublicKey(publicKey));
+      // Fetch vault from API to get stokenAccount, then read user_state on-chain
+      const apiRes = await fetch(`/api/vault/${publicKey}`);
+      const apiData = await apiRes.json() as { vault?: { stokenAccount?: string } | null };
+      const stokenAccountStr = apiData?.vault?.stokenAccount;
+      if (!stokenAccountStr) { setSyncState({ kind: "failed" }); return; }
+
+      const stokenAtaPk = new PublicKey(stokenAccountStr);
+      const onChain = await fetchUserState(connection, stokenAtaPk);
       if (!onChain) { setSyncState({ kind: "failed" }); return; }
 
       const result = await syncOtsGeneration(
@@ -68,7 +77,7 @@ function OtsTab({
   };
 
   const handleRefresh = async () => {
-    if (syncState.kind !== "found" || !publicKey || !signTransaction || !connection) return;
+    if (syncState.kind !== "found" || !publicKey) return;
     setRefreshing(true);
     setRefreshError(null);
     setRefreshTxSig(null);
@@ -86,36 +95,62 @@ function OtsTab({
         const e = await prepRes.json().catch(() => ({ error: "Failed to prepare refresh" })) as { error?: string };
         throw new Error(e.error ?? "Failed to prepare refresh");
       }
-      const { txBase64 } = await prepRes.json() as { txBase64: string };
+      const prepData = await prepRes.json() as { serverSide?: boolean; txSig?: string; txBase64?: string };
 
-      const txBytes = Buffer.from(txBase64, "base64");
-      const tx = VersionedTransaction.deserialize(txBytes);
-      const signed = await signTransaction(tx);
+      let signature: string;
 
-      const relayRes = await fetch("/api/relay", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transaction: Buffer.from(signed.serialize()).toString("base64"),
-          wallet: publicKey,
-        }),
-      });
-      if (!relayRes.ok) {
-        const e = await relayRes.json().catch(() => ({ error: "Relay failed" })) as { error?: string };
-        throw new Error(e.error ?? "Relay failed");
-      }
-      const { signature } = await relayRes.json() as { signature: string };
+      if (prepData.serverSide && prepData.txSig) {
+        // New vault: server signed and broadcast the refresh tx entirely.
+        // No Phantom approval needed.
+        signature = prepData.txSig;
 
-      for (let i = 0; i < 20; i++) {
-        const statusRes = await connection.getSignatureStatus(signature, { searchTransactionHistory: true });
-        const status = statusRes.value;
-        if (status && !status.err) {
-          const conf = status.confirmationStatus;
-          if (conf === "confirmed" || conf === "finalized") break;
-        } else if (status?.err) {
-          throw new Error("Transaction failed on-chain: " + JSON.stringify(status.err));
+        if (connection && !signature.startsWith("sim:")) {
+          for (let i = 0; i < 20; i++) {
+            const statusRes = await connection.getSignatureStatus(signature, { searchTransactionHistory: true });
+            const status = statusRes.value;
+            if (status && !status.err) {
+              const conf = status.confirmationStatus;
+              if (conf === "confirmed" || conf === "finalized") break;
+            } else if (status?.err) {
+              throw new Error("Refresh transaction failed on-chain: " + JSON.stringify(status.err));
+            }
+            await new Promise((r) => setTimeout(r, 2000));
+          }
         }
-        await new Promise((r) => setTimeout(r, 2000));
+      } else {
+        // Legacy vault: user must sign via Phantom + relay.
+        if (!signTransaction || !connection) throw new Error("Wallet not connected. Connect Phantom and try again.");
+
+        const txBytes = Buffer.from(prepData.txBase64!, "base64");
+        const tx = VersionedTransaction.deserialize(txBytes);
+        const signed = await signTransaction(tx);
+
+        const relayRes = await fetch("/api/relay", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            transaction: Buffer.from(signed.serialize()).toString("base64"),
+            wallet: publicKey,
+          }),
+        });
+        if (!relayRes.ok) {
+          const e = await relayRes.json().catch(() => ({ error: "Relay failed" })) as { error?: string };
+          throw new Error(e.error ?? "Relay failed");
+        }
+        const { signature: relaySig } = await relayRes.json() as { signature: string };
+        signature = relaySig;
+
+        for (let i = 0; i < 20; i++) {
+          const statusRes = await connection.getSignatureStatus(signature, { searchTransactionHistory: true });
+          const status = statusRes.value;
+          if (status && !status.err) {
+            const conf = status.confirmationStatus;
+            if (conf === "confirmed" || conf === "finalized") break;
+          } else if (status?.err) {
+            throw new Error("Transaction failed on-chain: " + JSON.stringify(status.err));
+          }
+          await new Promise((r) => setTimeout(r, 2000));
+        }
       }
 
       await fetch("/api/vault/update-chain", {
@@ -143,7 +178,7 @@ function OtsTab({
   return (
     <div className="space-y-6">
       <p className="text-[#888888] text-sm">
-        Your SafeVault uses a PBKDF2 hash chain. Each unshield consumes one OTS depth level.
+        Your Shielded Vault uses a PBKDF2 hash chain. Each unshield consumes one OTS depth level.
         When exhausted, refresh to generate a new 32-step chain from the same vault code.
       </p>
 
@@ -217,7 +252,7 @@ function OtsTab({
         )}
 
         {syncState.kind === "found" && (
-          <div className="border border-[#FF6B00]/30 bg-[#FF6B00]/5 rounded px-3 py-3 space-y-2">
+          <div className="border border-[#2A2A2A] bg-[#0D0D0D] rounded px-3 py-3 space-y-2">
             <p className="text-[#FF6B00] text-xs font-['JetBrains_Mono'] font-bold">
               Ready to refresh
             </p>
@@ -256,7 +291,7 @@ function OtsTab({
           <div className="border border-green-500/30 bg-green-500/5 rounded px-3 py-2">
             <p className="text-green-400 text-xs font-['JetBrains_Mono'] font-bold mb-1">Chain refreshed on-chain</p>
             <a
-              href={`https://explorer.solana.com/tx/${refreshTxSig}?cluster=devnet`}
+              href={`https://explorer.solana.com/tx/${refreshTxSig}${cluster === "devnet" ? "?cluster=devnet" : ""}`}
               target="_blank"
               rel="noreferrer"
               className="text-[#888888] font-['JetBrains_Mono'] text-[10px] hover:text-white transition-colors break-all"
@@ -328,6 +363,7 @@ export function VaultSection() {
   const [shieldSuccess, setShieldSuccess] = useState(false);
   const [unshieldSuccess, setUnshieldSuccess] = useState<{ newDepth: number } | null>(null);
   const [opError, setOpError] = useState("");
+  const [savedCodeConfirmed, setSavedCodeConfirmed] = useState(false);
 
   const isValidCode = validateVaultCode(vaultCode);
   const solBalance = portfolio?.solBalance ?? 0;
@@ -353,6 +389,7 @@ export function VaultSection() {
     setOpError("");
     setShieldSuccess(false);
     setUnshieldSuccess(null);
+    setSavedCodeConfirmed(false);
   };
 
   const handleShield = async () => {
@@ -397,12 +434,6 @@ export function VaultSection() {
 
   return (
     <div className="px-3 sm:px-5 py-5 max-w-2xl">
-      <div className="bg-[#141414] border-b border-[#2A2A2A] px-3 sm:px-5 py-2.5 -mx-3 sm:-mx-5 -mt-5 mb-5">
-        <p className="font-['JetBrains_Mono'] text-[#888888] text-xs">
-          signito_vault program pending deployment. Vault registration and OTS verification are live.
-        </p>
-      </div>
-
       <div className="flex items-center gap-3 mb-3">
         <span className="tag tag-orange">SAFEVAULT</span>
         <span className="tag">OTS</span>
@@ -421,7 +452,7 @@ export function VaultSection() {
             onClick={() => { setActiveTab(tab); resetForm(); }}
             className={`px-6 py-3 font-['Space_Grotesk'] font-medium text-sm border-b-2 transition-colors ${
               activeTab === tab
-                ? "border-[#FF6B00] text-white"
+                ? "border-white text-white"
                 : "border-transparent text-[#888888] hover:text-white"
             }`}
           >
@@ -448,8 +479,7 @@ export function VaultSection() {
                   {needsVaultCode ? "Vault created" : "Vault registered"}, OTS Protocol active
                 </p>
                 <p className="text-[#888888] text-xs font-['JetBrains_Mono'] leading-relaxed">
-                  {amount} {token} queued for shielding. On-chain execution will be enabled once
-                  signito_vault deploys to Mainnet. Your vault code is set.
+                  Your SOL has been shielded to s{token}. Use the Shield panel to complete the on-chain transaction.
                 </p>
                 <div className="pt-2 border-t border-green-500/20 space-y-1">
                   <div className="flex justify-between text-xs font-['JetBrains_Mono']">
@@ -470,7 +500,7 @@ export function VaultSection() {
                 <p className="text-[#888888] text-sm">Shield your funds in the smart contract. SOL becomes sSOL, USDC becomes sUSDC.</p>
 
                 {publicKey && (
-                  <div className={`border rounded p-3 space-y-1 ${vaultExists ? "border-[#FF6B00]/40 bg-[#FF6B00]/5" : "border-[#2A2A2A] bg-[#0A0A0A]"}`}>
+                  <div className={`border rounded p-3 space-y-1 ${vaultExists ? "border-[#2A2A2A] bg-[#0D0D0D]" : "border-[#2A2A2A] bg-[#0A0A0A]"}`}>
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-['JetBrains_Mono'] text-[#888888] uppercase tracking-wider">Vault</span>
                       {vaultLoading ? (
@@ -482,7 +512,7 @@ export function VaultSection() {
                       )}
                     </div>
                     {vaultExists && (
-                      <div className="flex items-center gap-3 pt-1 border-t border-[#FF6B00]/20">
+                      <div className="flex items-center gap-3 pt-1 border-t border-[#2A2A2A]">
                         <span className="text-[#888888] text-xs font-['JetBrains_Mono']">OTS depth remaining:</span>
                         <span className={`text-xs font-['JetBrains_Mono'] font-bold ${chainDepth < 5 ? "text-red-400" : "text-[#FF6B00]"}`}>
                           {chainDepth}
@@ -522,30 +552,57 @@ export function VaultSection() {
                 </div>
 
                 {needsVaultCode && (
-                  <div>
-                    <label className="block text-xs font-['JetBrains_Mono'] text-[#888888] mb-2">
-                      Set Vault Code <span className="text-[#888888]">(PBKDF2 seed, never leaves browser)</span>
-                    </label>
-                    <input
-                      type="password"
-                      className="input-field"
-                      maxLength={8}
-                      placeholder="8 chars (e.g. abcd1234)"
-                      value={vaultCode}
-                      onChange={(e) => setVaultCode(e.target.value)}
-                      disabled={!connected}
-                    />
-                    {vaultCode.length > 0 && !isValidCode && (
-                      <p className="text-[#FF6B00] text-xs font-['JetBrains_Mono'] mt-1">
-                        8 chars required: letters and numbers only
-                      </p>
+                  <>
+                    <div>
+                      <label className="block text-xs font-['JetBrains_Mono'] text-[#888888] mb-2">
+                        Set Vault Code <span className="text-[#888888]">(PBKDF2 seed, never leaves browser)</span>
+                      </label>
+                      <input
+                        type="password"
+                        className="input-field"
+                        maxLength={8}
+                        placeholder="8 chars (e.g. abcd1234)"
+                        value={vaultCode}
+                        onChange={(e) => { setVaultCode(e.target.value); setSavedCodeConfirmed(false); }}
+                        disabled={!connected}
+                      />
+                      {vaultCode.length > 0 && !isValidCode && (
+                        <p className="text-[#FF6B00] text-xs font-['JetBrains_Mono'] mt-1">
+                          8 chars required: letters and numbers only
+                        </p>
+                      )}
+                    </div>
+
+                    {isValidCode && (
+                      <div className="border border-[#2A2A2A] bg-[#0D0D0D] rounded p-4 space-y-3">
+                        <p className="text-xs font-['JetBrains_Mono'] text-white font-bold uppercase tracking-wider">
+                          Warning
+                        </p>
+                        <p className="text-xs font-['JetBrains_Mono'] text-[#CCCCCC] leading-relaxed">
+                          Your vault code cannot be recovered. If you lose it, your shielded funds are permanently inaccessible. Write it down and store it in a safe place before continuing.
+                        </p>
+                        <label className="flex items-start gap-3 cursor-pointer group">
+                          <input
+                            type="checkbox"
+                            checked={savedCodeConfirmed}
+                            onChange={(e) => setSavedCodeConfirmed(e.target.checked)}
+                            className="mt-0.5 w-4 h-4 accent-[#FF6B00] cursor-pointer shrink-0"
+                          />
+                          <span className="text-xs font-['JetBrains_Mono'] text-[#CCCCCC] group-hover:text-white transition-colors leading-relaxed">
+                            I have written down my vault code and stored it in a safe place
+                          </span>
+                        </label>
+                      </div>
                     )}
-                  </div>
+                  </>
                 )}
 
-                <div className="bg-[#0A0A0A] border border-[#2A2A2A] rounded p-3">
+                <div className="bg-[#0A0A0A] border border-[#2A2A2A] rounded p-3 space-y-1.5">
                   <p className="text-[#888888] text-xs font-['JetBrains_Mono']">
-                    {token} to s{token} (NonTransferable SPL Token-2022, shielded by program PDA)
+                    {token} shielded to s{token}: NonTransferable SPL Token-2022, held in program PDA.
+                  </p>
+                  <p className="text-[#555555] text-xs font-['JetBrains_Mono']">
+                    sSOL will not appear normally in Phantom. It is shielded by design. To view it, add the CA to Phantom manually and mark as not spam. CA: B6CmtJ8VUeWYwqK8jnEBQGZVweBqBtNxdKBG8n2p4yLw
                   </p>
                 </div>
 
@@ -555,7 +612,7 @@ export function VaultSection() {
 
                 <button
                   className="btn-primary w-full justify-center mt-2"
-                  disabled={!connected || !amount || (needsVaultCode && !isValidCode) || createVaultMutation.isPending}
+                  disabled={!connected || !amount || (needsVaultCode && (!isValidCode || !savedCodeConfirmed)) || createVaultMutation.isPending}
                   onClick={handleShield}
                 >
                   {!connected
@@ -616,7 +673,7 @@ export function VaultSection() {
                 <p className="text-[#888888] text-sm">Unshield tokens. Provide vault code to authorize the release.</p>
 
                 {publicKey && (
-                  <div className={`border rounded p-3 space-y-1 ${vaultExists ? "border-[#FF6B00]/30 bg-[#FF6B00]/5" : "border-red-500/30 bg-[#0A0A0A]"}`}>
+                  <div className={`border rounded p-3 space-y-1 ${vaultExists ? "border-[#2A2A2A] bg-[#0D0D0D]" : "border-red-500/30 bg-[#0A0A0A]"}`}>
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-['JetBrains_Mono'] text-[#888888] uppercase tracking-wider">Vault Status</span>
                       {vaultLoading ? (

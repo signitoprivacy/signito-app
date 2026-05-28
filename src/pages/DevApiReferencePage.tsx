@@ -1,24 +1,16 @@
 import React from "react";
 import { LandingNavBar } from "../components/LandingNavBar";
 import { Footer } from "../components/Footer";
-import sketchRelay from "../assets/sketch-relay-routing.png";
-import signitoLogoUrl from "@assets/signito-logo-nobg.png";
+import { MountainDivider } from "../components/MountainDivider";
+import sketchRelay from "../assets/sketch-relay-routing.jpg";
 
-const MountainDivider = () => (
-  <svg className="absolute top-0 left-0 w-full pointer-events-none"
-    style={{ transform: "translateY(-99%)", overflow: "visible" }}
-    viewBox="0 0 1440 120" preserveAspectRatio="none" fill="#FFFFFF"
-    overflow="visible" xmlns="http://www.w3.org/2000/svg">
-    <path d="M0,120 L0,90 L180,10 L360,80 L540,5 L720,75 L900,0 L1080,70 L1200,20 L1350,-130 L1440,-60 L1440,120 Z" />
-  </svg>
-);
 
 const endpoints: { method: string; path: string; desc: string; group: string }[] = [
   { group: "Health", method: "GET", path: "/api/healthz", desc: "Returns 200 OK with server uptime. Use for liveness probes." },
   { group: "Status", method: "GET", path: "/api/status", desc: "Returns connectivity status for RPC, database, and relay. Checked server-side, never from the browser." },
   { group: "Portfolio", method: "GET", path: "/api/portfolio/:address", desc: "Returns SPL token balances for a given wallet address, fetched via the Helius proxy." },
   { group: "Transactions", method: "GET", path: "/api/transactions/:address", desc: "Returns recent transaction history for a wallet address. Paginated." },
-  { group: "Vault", method: "POST", path: "/api/vault/create", desc: "Create a new SafeVault. Requires wallet address and PBKDF2-derived vault code hash." },
+  { group: "Vault", method: "POST", path: "/api/vault/create", desc: "Create a new Shielded Vault. Requires wallet address and PBKDF2-derived vault code hash." },
   { group: "Vault", method: "POST", path: "/api/vault/deposit", desc: "Deposit SPL tokens into a vault. Requires signed deposit instruction." },
   { group: "Vault", method: "POST", path: "/api/vault/withdraw", desc: "Withdraw from a vault using an OTS code. The OTS is consumed and cannot be reused." },
   { group: "Vault", method: "GET", path: "/api/vault/:id/status", desc: "Returns vault balance, OTS codes remaining, and last activity timestamp." },
@@ -44,7 +36,6 @@ export default function DevApiReferencePage() {
         {/* Hero - dark */}
         <div className="border-b border-[#2A2A2A] relative overflow-hidden min-h-screen flex flex-col">
           <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: "radial-gradient(circle, #2A2A2A 1px, transparent 1px)", backgroundSize: "36px 36px" }} />
-          <img src={signitoLogoUrl} alt="" aria-hidden className="absolute right-[-80px] bottom-[-80px] w-[520px] opacity-[0.035] pointer-events-none select-none" />
           <div className="max-w-[3200px] mx-auto px-8 md:px-16 pt-[20vh] pb-20 grid grid-cols-1 md:grid-cols-2 gap-12 items-center relative z-10 w-full">
             <div>
               <div className="inline-block font-['JetBrains_Mono'] text-[#FF6B00] text-xs tracking-[0.2em] uppercase border border-[#FF6B00]/30 px-3 py-1 mb-8">Developers</div>

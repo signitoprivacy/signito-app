@@ -1,17 +1,9 @@
 import React from "react";
 import { LandingNavBar } from "../components/LandingNavBar";
 import { Footer } from "../components/Footer";
-import sketchSToken from "../assets/sketch-stoken-mint.png";
-import signitoLogoUrl from "@assets/signito-logo-nobg.png";
+import { MountainDivider } from "../components/MountainDivider";
+import sketchSToken from "../assets/sketch-stoken-mint.jpg";
 
-const MountainDivider = () => (
-  <svg className="absolute top-0 left-0 w-full pointer-events-none"
-    style={{ transform: "translateY(-99%)", overflow: "visible" }}
-    viewBox="0 0 1440 120" preserveAspectRatio="none" fill="#FFFFFF"
-    overflow="visible" xmlns="http://www.w3.org/2000/svg">
-    <path d="M0,120 L0,90 L180,10 L360,80 L540,5 L720,75 L900,0 L1080,70 L1200,20 L1350,-130 L1440,-60 L1440,120 Z" />
-  </svg>
-);
 
 export default function LearnSTokenPage() {
   return (
@@ -22,7 +14,6 @@ export default function LearnSTokenPage() {
         {/* Hero - dark */}
         <div className="border-b border-[#2A2A2A] relative overflow-hidden min-h-screen flex flex-col">
           <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: "radial-gradient(circle, #2A2A2A 1px, transparent 1px)", backgroundSize: "36px 36px" }} />
-          <img src={signitoLogoUrl} alt="" aria-hidden className="absolute right-[-80px] bottom-[-80px] w-[520px] opacity-[0.035] pointer-events-none select-none" />
           <div className="max-w-[3200px] mx-auto px-8 md:px-16 pt-[20vh] pb-20 grid grid-cols-1 md:grid-cols-2 gap-12 items-center relative z-10 w-full">
             <div>
               <div className="inline-block font-['JetBrains_Mono'] text-[#FF6B00] text-xs tracking-[0.2em] uppercase border border-[#FF6B00]/30 px-3 py-1 mb-8">Learn</div>
@@ -47,7 +38,7 @@ export default function LearnSTokenPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                 <div>
                   <p className="text-[#555555] font-['Inter'] leading-relaxed mb-6">
-                    When you deposit SOL into SafeVault, the vault program needs to track that the deposit belongs to you. It does this by minting an sSOL token to your wallet. The sSOL is proof of your deposit. When you withdraw, the sSOL is burned and your SOL is returned.
+                    When you deposit SOL into Shielded Vault, the vault program needs to track that the deposit belongs to you. It does this by minting an sSOL token to your wallet. The sSOL is proof of your deposit. When you withdraw, the sSOL is burned and your SOL is returned.
                   </p>
                   <p className="text-[#555555] font-['Inter'] leading-relaxed mb-6">
                     The sToken uses SPL Token-2022's NonTransferable extension. This means sSOL cannot be sent from one wallet to another. Only the vault program can move it, and only when a valid OTS reveal is provided.

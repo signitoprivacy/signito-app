@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
-import { useWallet } from "../lib/wallet";
 import {
   useGetAirsignVoucher,
   getGetAirsignVoucherQueryKey,
@@ -12,13 +11,13 @@ import { NavBar } from "../components/NavBar";
 function StatusBadge({ status }: { status: string }) {
   const cfg: Record<string, { label: string; color: string }> = {
     unclaimed: { label: "UNCLAIMED", color: "text-[#FF6B00] border-[#FF6B00]" },
-    pending:   { label: "PENDING RELEASE", color: "text-yellow-400 border-yellow-400" },
+    pending:   { label: "PENDING", color: "text-yellow-400 border-yellow-400" },
     claimed:   { label: "CLAIMED", color: "text-green-400 border-green-400" },
     expired:   { label: "EXPIRED", color: "text-[#888888] border-[#888888]" },
   };
   const c = cfg[status] ?? cfg.expired;
   return (
-    <span className={`inline-block font-['JetBrains_Mono'] text-xs border px-2 py-0.5 rounded ${c.color}`}>
+    <span className={`inline-block font-['JetBrains_Mono'] text-xs border px-2 py-0.5 ${c.color}`}>
       {c.label}
     </span>
   );
@@ -29,11 +28,11 @@ export default function ClaimPage() {
   const [, navigate] = useLocation();
   const nonce = params?.nonce ?? "";
 
-  const { publicKey, connected } = useWallet();
   const queryClient = useQueryClient();
 
   const [claimed, setClaimed] = useState(false);
   const [claimError, setClaimError] = useState("");
+  const [processing, setProcessing] = useState(false);
 
   const { data: voucher, isLoading, refetch } = useGetAirsignVoucher(nonce, {
     query: {
@@ -55,29 +54,24 @@ export default function ClaimPage() {
   }, [voucher?.claimStatus, claimed, refetch]);
 
   const handleClaim = async () => {
-    if (!publicKey) return;
     setClaimError("");
+    setProcessing(true);
     try {
-      await claimMutation.mutateAsync({
-        nonce,
-        data: { claimerWallet: publicKey },
-      });
+      await claimMutation.mutateAsync({ nonce });
       await queryClient.invalidateQueries({ queryKey: getGetAirsignVoucherQueryKey(nonce) });
       setClaimed(true);
       refetch();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("match")) setClaimError("Your wallet does not match the intended recipient.");
-      else if (msg.includes("expired")) setClaimError("This voucher has expired.");
+      if (msg.includes("expired")) setClaimError("This voucher has expired.");
       else if (msg.includes("claimed")) setClaimError("This voucher was already claimed.");
-      else setClaimError("Failed to submit claim. Please try again.");
+      else setClaimError(msg || "Failed to submit claim. Please try again.");
+    } finally {
+      setProcessing(false);
     }
   };
 
-  const canClaim =
-    !!publicKey &&
-    voucher?.claimStatus === "unclaimed" &&
-    !claimMutation.isPending;
+  const canClaim = voucher?.claimStatus === "unclaimed" && !claimMutation.isPending && !processing;
 
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-white">
@@ -88,20 +82,26 @@ export default function ClaimPage() {
           <span className="tag mb-3 inline-block">AIRSIGN</span>
           <h1 className="font-['Space_Grotesk'] text-3xl font-bold mb-1">Claim Voucher</h1>
           <p className="text-[#888888] text-sm font-['JetBrains_Mono']">
-            Nonce: <span className="text-white">{nonce.slice(0, 8)}...{nonce.slice(-6)}</span>
+            Nonce: <span className="text-white font-bold">{nonce.slice(0, 8)}...{nonce.slice(-6)}</span>
           </p>
         </div>
 
         {isLoading && (
           <div className="card">
-            <p className="text-[#888888] font-['JetBrains_Mono'] text-sm">Loading voucher...</p>
+            <div className="flex items-center gap-3">
+              <svg className="animate-spin shrink-0" width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <circle cx="9" cy="9" r="7" stroke="#2A2A2A" strokeWidth="2"/>
+                <path d="M9 2 A7 7 0 0 1 16 9" stroke="#FF6B00" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+              <p className="text-[#888888] font-['JetBrains_Mono'] text-sm">Loading voucher...</p>
+            </div>
           </div>
         )}
 
         {!isLoading && !voucher && (
           <div className="card border border-red-500/30">
-            <p className="text-red-400 font-['JetBrains_Mono'] text-sm">Voucher not found.</p>
-            <p className="text-[#888888] font-['JetBrains_Mono'] text-xs mt-1">
+            <p className="text-red-400 font-['JetBrains_Mono'] text-sm mb-1">Voucher not found.</p>
+            <p className="text-[#888888] font-['JetBrains_Mono'] text-xs">
               Check the link is correct or ask the sender for a new voucher.
             </p>
           </div>
@@ -109,6 +109,7 @@ export default function ClaimPage() {
 
         {voucher && (
           <div className="space-y-4">
+            {/* Voucher details */}
             <div className="card space-y-3">
               <div className="flex items-center justify-between">
                 <p className="text-[#888888] text-xs font-['JetBrains_Mono'] uppercase tracking-wider">
@@ -120,11 +121,9 @@ export default function ClaimPage() {
               {[
                 ["Token", voucher.token],
                 ["Amount", `${voucher.amount} ${voucher.token}`],
-                ["Intended Recipient", `${voucher.recipient.slice(0, 10)}...${voucher.recipient.slice(-8)}`],
-                ["Issuer", voucher.issuerWallet],
-                ["Expires", new Date(voucher.expiresAt).toLocaleString()],
+                ["Recipient", `${(voucher.recipient ?? "").slice(0, 10)}...${(voucher.recipient ?? "").slice(-8)}`],
               ].map(([label, val]) => (
-                <div key={label} className="flex items-center justify-between text-sm">
+                <div key={label} className="flex items-center justify-between">
                   <span className="text-[#888888] font-['JetBrains_Mono'] text-xs">{label}</span>
                   <span className="text-white font-['JetBrains_Mono'] text-xs">{val}</span>
                 </div>
@@ -133,113 +132,83 @@ export default function ClaimPage() {
               <div className="border-t border-[#2A2A2A] pt-3">
                 <div className="flex items-center justify-between">
                   <span className="text-[#888888] text-xs font-['JetBrains_Mono']">You receive</span>
-                  <span className="text-[#FF6B00] font-['Space_Grotesk'] font-bold text-xl">
+                  <span className="text-[#FF6B00] font-['Space_Grotesk'] font-bold text-2xl">
                     {voucher.amount} {voucher.token}
                   </span>
                 </div>
               </div>
             </div>
 
+            {/* Claim action */}
             {voucher.claimStatus === "unclaimed" && (
               <div className="card space-y-4">
-                <p className="text-[#888888] text-xs font-['JetBrains_Mono'] leading-relaxed">
-                  Connect the wallet that matches the recipient address above.
-                  After claiming, the issuer will sign an unshield transaction and you will receive plain {voucher.token} directly.
-                </p>
-
-                {!connected && (
-                  <div className="border border-[#2A2A2A] rounded p-3">
-                    <p className="text-[#888888] text-xs font-['JetBrains_Mono']">
-                      Connect your Phantom wallet to claim this voucher.
-                    </p>
-                  </div>
-                )}
-
-                {connected && publicKey && publicKey !== voucher.recipient && (
-                  <div className="border border-yellow-500/30 bg-yellow-500/5 rounded p-3">
-                    <p className="text-yellow-400 text-xs font-['JetBrains_Mono'] font-bold mb-1">
-                      Wallet mismatch
-                    </p>
-                    <p className="text-[#888888] text-xs font-['JetBrains_Mono']">
-                      Connected: {publicKey.slice(0, 10)}...{publicKey.slice(-6)}
-                    </p>
-                    <p className="text-[#888888] text-xs font-['JetBrains_Mono']">
-                      Expected: {voucher.recipient.slice(0, 10)}...{voucher.recipient.slice(-6)}
-                    </p>
-                    <p className="text-yellow-300 text-xs font-['JetBrains_Mono'] mt-1">
-                      Switch to the recipient wallet to claim.
-                    </p>
-                  </div>
-                )}
+                <div className="bg-[#0A0A0A] border border-[#2A2A2A] p-3">
+                  <p className="text-[#888888] text-xs font-['JetBrains_Mono'] leading-relaxed">
+                    No wallet required. The relayer will release {voucher.amount} {voucher.token} directly to the recipient address recorded in the voucher. This cannot be redirected.
+                  </p>
+                </div>
 
                 {claimError && (
-                  <p className="text-red-400 text-xs font-['JetBrains_Mono']">{claimError}</p>
+                  <div className="bg-[#0A0A0A] border border-red-900/40 p-3">
+                    <p className="text-red-400 text-xs font-['JetBrains_Mono']">{claimError}</p>
+                  </div>
+                )}
+
+                {processing && (
+                  <div className="bg-[#0A0A0A] border border-[#2A2A2A] p-3 flex items-center gap-3">
+                    <svg className="animate-spin shrink-0" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <circle cx="8" cy="8" r="6" stroke="#2A2A2A" strokeWidth="2"/>
+                      <path d="M8 2 A6 6 0 0 1 14 8" stroke="#FF6B00" strokeWidth="2" strokeLinecap="round"/>
+                    </svg>
+                    <p className="text-[#FF6B00] text-xs font-['JetBrains_Mono']">Submitting claim to relayer...</p>
+                  </div>
                 )}
 
                 <button
                   className="btn-primary w-full justify-center"
-                  disabled={!canClaim || (connected && publicKey !== voucher.recipient)}
                   onClick={handleClaim}
+                  disabled={!canClaim}
                 >
-                  {claimMutation.isPending ? "Submitting claim..." : `Claim ${voucher.amount} ${voucher.token}`}
+                  Claim {voucher.amount} {voucher.token}
                 </button>
               </div>
             )}
 
+            {/* Pending state */}
             {(voucher.claimStatus === "pending" || claimed) && (
-              <div className="card border border-yellow-500/30 bg-yellow-500/5 space-y-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
-                  <p className="text-yellow-400 text-sm font-['JetBrains_Mono'] font-bold">
-                    Claim request submitted
-                  </p>
+              <div className="card space-y-3">
+                <div className="flex items-center gap-3">
+                  <svg className="animate-spin shrink-0 text-[#FF6B00]" width="18" height="18" viewBox="0 0 18 18" fill="none">
+                    <circle cx="9" cy="9" r="7" stroke="#2A2A2A" strokeWidth="2"/>
+                    <path d="M9 2 A7 7 0 0 1 16 9" stroke="#FF6B00" strokeWidth="2" strokeLinecap="round"/>
+                  </svg>
+                  <p className="text-[#FF6B00] text-sm font-['JetBrains_Mono']">Relayer is processing your claim...</p>
                 </div>
                 <p className="text-[#888888] text-xs font-['JetBrains_Mono'] leading-relaxed">
-                  The voucher issuer has been notified. They will sign an unshield transaction to send your {voucher.token}.
-                  Once signed and confirmed, the status below will update automatically.
-                </p>
-                <p className="text-[#555] text-xs font-['JetBrains_Mono']">
-                  Checking for updates every 8 seconds...
+                  The relayer has received the claim and is submitting the on-chain transaction. This page will update automatically.
                 </p>
               </div>
             )}
 
+            {/* Claimed state */}
             {voucher.claimStatus === "claimed" && (
-              <div className="card border border-green-500/30 bg-green-500/5 space-y-3">
-                <p className="text-green-400 text-sm font-['JetBrains_Mono'] font-bold">
-                  Funds released
+              <div className="card border border-green-500/30 space-y-2">
+                <p className="text-green-400 font-['JetBrains_Mono'] text-sm font-bold">Claim complete.</p>
+                <p className="text-[#888888] font-['JetBrains_Mono'] text-xs leading-relaxed">
+                  {voucher.amount} {voucher.token} has been released to the recipient address. The escrow PDA is now empty.
                 </p>
-                <p className="text-[#888888] text-xs font-['JetBrains_Mono']">
-                  {voucher.amount} {voucher.token} has been sent to your wallet.
-                </p>
-                {voucher.txSig && (
-                  <a
-                    href={`https://solscan.io/tx/${voucher.txSig}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-block text-[#FF6B00] text-xs font-['JetBrains_Mono'] hover:text-white"
-                  >
-                    View transaction: {voucher.txSig.slice(0, 12)}...{voucher.txSig.slice(-8)}
-                  </a>
-                )}
               </div>
             )}
 
+            {/* Expired state */}
             {voucher.claimStatus === "expired" && (
-              <div className="card border border-red-500/30">
-                <p className="text-red-400 text-sm font-['JetBrains_Mono'] font-bold">Voucher expired</p>
-                <p className="text-[#888888] text-xs font-['JetBrains_Mono'] mt-1">
-                  Ask the sender to create a new voucher.
+              <div className="card border border-[#333] space-y-2">
+                <p className="text-[#888888] font-['JetBrains_Mono'] text-sm">This voucher has expired.</p>
+                <p className="text-[#555] font-['JetBrains_Mono'] text-xs">
+                  Contact the sender to create a new voucher.
                 </p>
               </div>
             )}
-
-            <div className="border border-[#2A2A2A] rounded p-3">
-              <p className="text-[#555] text-xs font-['JetBrains_Mono'] leading-relaxed">
-                AirSign uses Ed25519 offline signing. The issuer signs a binary voucher and the server verifies it.
-                No custody: the issuer signs the final unshield transaction directly from their wallet.
-              </p>
-            </div>
           </div>
         )}
       </main>

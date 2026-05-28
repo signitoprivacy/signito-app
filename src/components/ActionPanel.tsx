@@ -7,19 +7,19 @@ import {
   useCreateVault,
   useUnshieldVault,
   useVaultDeposit,
-  useAirsignPrepare,
+  useAirsignMint,
+  useAirsignAttachVoucher,
+  useGetAirsignMints,
   useGetVaultBalances,
-  getGetAirsignBalancesQueryKey,
   getGetVaultBalancesQueryKey,
   getGetTransactionsQueryKey,
   getGetPortfolioQueryKey,
   useGetRelayInfo,
   getGetRelayInfoQueryKey,
   useStealthZkTransfer,
-  useAirsignCreateVoucher,
   useRelay,
 } from "@workspace/api-client-react";
-import { buildInitializeVaultIx, buildVersionedTx, buildConvertToAirtokenIx, deriveVaultPda, fetchVaultState } from "@workspace/program";
+import { fetchUserState } from "@workspace/program";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   validateVaultCode,
@@ -28,6 +28,8 @@ import {
 } from "../lib/ots";
 import { useWallet } from "../lib/wallet";
 import zecLogoUrl from "@assets/image_1778411971152.png";
+
+const SSOL_CA = "B6CmtJ8VUeWYwqK8jnEBQGZVweBqBtNxdKBG8n2p4yLw";
 
 export type ActionType = "shield" | "unshield" | "zk-send" | "voucher" | "mint";
 
@@ -121,7 +123,7 @@ const PANEL_META: Record<
   shield: {
     tag: "SAFEVAULT",
     title: (t) => `Shield ${t}`,
-    sub: (t) => `${t} to s${t}: stored in your SafeVault PDA`,
+    sub: (t) => `${t} to s${t}: stored in your Shielded Vault PDA`,
   },
   unshield: {
     tag: "SAFEVAULT",
@@ -136,13 +138,13 @@ const PANEL_META: Record<
   },
   voucher: {
     tag: "AIRSIGN",
-    title: (t) => `Voucher from ${t}`,
-    sub: () => "Ed25519 offline voucher, recipient claims on-chain",
+    title: () => "Create Voucher",
+    sub: () => "Assign recipient to minted aSOL. Sign offline, deliver QR to anyone.",
   },
   mint: {
     tag: "AIRSIGN",
     title: (t) => `Mint ${"a" + t.replace(/^s/, "")}`,
-    sub: (t) => `Convert ${t} to ${"a" + t.replace(/^s/, "")} airToken for offline voucher delivery`,
+    sub: (t) => `Burn ${t} on-chain. SOL locked in escrow. No recipient needed yet.`,
   },
 };
 
@@ -152,16 +154,15 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
   const createVaultMutation = useCreateVault();
   const unshieldMutation = useUnshieldVault();
   const depositMutation = useVaultDeposit();
-  const mintMutation = useAirsignPrepare();
-  const createVoucherMutation = useAirsignCreateVoucher();
+  const mintMutation = useAirsignMint();
+  const attachVoucherMutation = useAirsignAttachVoucher();
   const queryClient = useQueryClient();
   const meta = PANEL_META[action];
   const baseToken = tokenSymbol.replace(/^s/, "").replace(/^a/, "");
 
   const [amount, setAmount] = useState("");
   const [vaultCode, setVaultCode] = useState("");
-  const [destination, setDestination] = useState(publicKey ?? "");
-  const [expiry, setExpiry] = useState("24");
+  const [destination, setDestination] = useState("");
   const [zkStep, setZkStep] = useState<"form" | "ready">("form");
   const [voucherStep, setVoucherStep] = useState<"form" | "done">("form");
   const [voucherJson, setVoucherJson] = useState("");
@@ -170,6 +171,8 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
   const [shieldOnchainSig, setShieldOnchainSig] = useState<string | null>(null);
   const [shieldOnchainErr, setShieldOnchainErr] = useState<string | null>(null);
   const [shieldMintToken, setShieldMintToken] = useState<string | null>(null);
+  const [shieldCloseConfirmed, setShieldCloseConfirmed] = useState(false);
+  const [caCopied, setCaCopied] = useState(false);
   const [unshieldSuccess, setUnshieldSuccess] = useState<{
     newDepth: number;
     txSig: string | null;
@@ -178,9 +181,10 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
     aToken: string;
     amount: number;
     nonce: string;
-    expiresAt: string;
     newDepth: number;
   } | null>(null);
+  const [selectedNonce, setSelectedNonce] = useState("");
+  const [voucherClaimUrl, setVoucherClaimUrl] = useState("");
 
   // ZK / Relay state
   const [zkRecipient, setZkRecipient] = useState("");
@@ -188,11 +192,27 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
   const [zkPending, setZkPending] = useState(false);
   const [zkError, setZkError] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
-  const [processingLabel, setProcessingLabel] = useState("");
+  const [processingSteps, setProcessingSteps] = useState<string[]>([]);
+  const addStep = (label: string) => setProcessingSteps((prev) => [...prev, label]);
+  const [zkCexConfirmed, setZkCexConfirmed] = useState(false);
+  const [zkCexChecks, setZkCexChecks] = useState([false, false]);
+  const [showVaultCode, setShowVaultCode] = useState(false);
 
   const { data: relayInfo } = useGetRelayInfo({
     query: { queryKey: getGetRelayInfoQueryKey() },
   });
+
+  // Fetch pending mints (minted aSOL with no voucher attached yet) for the voucher flow
+  const { data: mintsData, refetch: refetchMints } = useGetAirsignMints(
+    publicKey ?? "",
+    {
+      query: {
+        queryKey: ["airsign-mints", publicKey ?? ""],
+        enabled: !!publicKey && action === "voucher",
+        staleTime: 0,
+      },
+    }
+  );
   const zkTransferMutation = useStealthZkTransfer();
   const relayMutation = useRelay();
 
@@ -214,8 +234,8 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
     query: {
       queryKey: getGetVaultBalancesQueryKey(publicKey ?? ""),
       enabled: !!publicKey,
-      staleTime: 3_000,
-      refetchInterval: 5_000,
+      staleTime: 0,
+      refetchInterval: 3_000,
     },
   });
 
@@ -236,16 +256,19 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
   useEffect(() => {
     setAmount("");
     setVaultCode("");
-    setDestination(publicKey ?? "");
-    setExpiry("24");
+    setDestination("");
+
     setZkStep("form");
     setVoucherStep("form");
     setVoucherJson("");
+    setSelectedNonce("");
+    setVoucherClaimUrl("");
     setOpError("");
     setShieldSuccess(false);
     setShieldOnchainSig(null);
     setShieldOnchainErr(null);
     setShieldMintToken(null);
+    setShieldCloseConfirmed(false);
     setUnshieldSuccess(null);
     setMintSuccess(null);
     setZkRecipient("");
@@ -253,23 +276,34 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
     setZkPending(false);
     setZkError("");
     setIsProcessing(false);
-    setProcessingLabel("");
+    setProcessingSteps([]);
+    setZkCexConfirmed(false);
+    setZkCexChecks([false, false]);
+    setShowVaultCode(false);
   }, [action, tokenSymbol]);
 
   const isValidCode = validateVaultCode(vaultCode);
   const canSubmitAmount = !!amount && parseFloat(amount) > 0;
 
+  const solReserveViolated =
+    action === "shield" &&
+    tokenSymbol === "SOL" &&
+    parseFloat(amount || "0") > tokenBalance - 0.001;
+
   const shieldReady =
     canSubmitAmount &&
     (!shieldNeedsCode || isValidCode) &&
-    !vaultLoading;
+    !vaultLoading &&
+    !solReserveViolated;
 
   const unshieldReady =
     canSubmitAmount &&
     isValidCode &&
-    destination.length >= 32 &&
+    !!publicKey &&
     vaultExists &&
-    chainDepth > 0;
+    chainDepth > 0 &&
+    parseFloat(amount || "0") <= tokenBalance &&
+    parseFloat(amount || "0") > 0;
 
   const mintReady =
     canSubmitAmount &&
@@ -284,7 +318,6 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
       queryClient.invalidateQueries({ queryKey: getGetVaultQueryKey(publicKey) }),
       queryClient.invalidateQueries({ queryKey: getGetVaultBalancesQueryKey(publicKey) }),
       queryClient.invalidateQueries({ queryKey: getGetTransactionsQueryKey(publicKey) }),
-      queryClient.invalidateQueries({ queryKey: getGetAirsignBalancesQueryKey(publicKey) }),
       queryClient.invalidateQueries({ queryKey: getGetPortfolioQueryKey(publicKey) }),
     ]);
   };
@@ -313,15 +346,15 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
       throw sendErr;
     }
 
-    setProcessingLabel("Confirming on-chain...");
+    addStep("Confirming on-chain...");
     try {
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
       await connection.confirmTransaction({ signature: txSig, blockhash, lastValidBlockHeight }, "confirmed");
     } catch (confirmErr) {
       const msg = confirmErr instanceof Error ? confirmErr.message : String(confirmErr);
       if (isBlockhashExpired(msg)) {
-        // Confirmation tracking expired — check directly if the tx landed
-        setProcessingLabel("Verifying on-chain status...");
+        // Confirmation tracking expired, check directly if the tx landed
+        addStep("Verifying on-chain status...");
         let confirmed = false;
         for (let i = 0; i < 10; i++) {
           await new Promise((r) => setTimeout(r, 2000));
@@ -335,7 +368,7 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
           }
         }
         if (!confirmed) {
-          // Still unknown — could be in-flight; return txSig and let caller decide
+          // Still unknown, could be in-flight; return txSig and let caller decide
           // rather than reporting failure for a tx that may have landed
           return txSig;
         }
@@ -354,12 +387,12 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
     const txBytes = Buffer.from(base64Tx, "base64");
     const tx = VersionedTransaction.deserialize(txBytes);
     const signed = await signTransaction(tx);
-    setProcessingLabel("Submitting via SignitoRelay...");
+    addStep("Submitting via SignitoRelay...");
     const result = await relayMutation.mutateAsync({
       data: { transaction: Buffer.from(signed.serialize()).toString("base64"), wallet: publicKey ?? undefined },
     });
     const sig = result.signature;
-    setProcessingLabel("Confirming on-chain...");
+    addStep("Confirming on-chain...");
     for (let i = 0; i < 20; i++) {
       const statusRes = await connection.getSignatureStatus(sig, { searchTransactionHistory: true });
       const status = statusRes.value;
@@ -374,169 +407,174 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
     return sig;
   };
 
+  // POST helper with JSON body and error extraction
+  const apiPost = async <T,>(path: string, body: unknown): Promise<T> => {
+    const res = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({ error: `HTTP ${res.status}` })) as { error?: string };
+      throw new Error(e.error ?? `Request failed (${res.status})`);
+    }
+    return res.json() as Promise<T>;
+  };
+
   const handleShield = async () => {
     if (!publicKey || !shieldReady) return;
     setOpError("");
+
     setIsProcessing(true);
 
     if (shieldNeedsCode) {
-      if (!signTransaction || !connection) {
-        setOpError("Wallet not ready. Connect Phantom and try again.");
-        setIsProcessing(false);
-        return;
-      }
-
       try {
-        const ownerPk = new PublicKey(publicKey);
         const codeHash = await deriveOtsHash(vaultCode, publicKey);
 
-        // Check on-chain: vault PDA may already exist from a previous tx that
-        // succeeded on-chain but failed to save to DB (e.g. blockhash expiry on confirm).
-        setProcessingLabel("Checking vault on-chain...");
-        const existingOnchain = await fetchVaultState(connection, ownerPk);
+        addStep("Preparing transaction...");
+        const prepData = await apiPost<{
+          sim?: boolean;
+          pendingId: string;
+          txBase64?: string;
+          mintStoken: string;
+          stokenAccount: string;
+          poolPda?: string;
+          chainDepth: number;
+          rentExtraLamports?: string;
+        }>("/api/vault/prepare-shield", { wallet: publicKey, codeHash, amount: parseFloat(amount), chainDepth: 32 });
 
-        if (existingOnchain) {
-          // Vault already exists on-chain — register it in DB then do a gasless deposit.
-          // Try to find the sSOL token account owned by this wallet for this mint,
-          // so we can recover a correct stokenAccount reference even after a partial failure.
-          setProcessingLabel("Recovering vault record...");
-          const mintStr = existingOnchain.mintStoken.toBase58();
-          let recoveredStokenAccount: string | undefined;
+        if (!prepData.sim) {
+          if (!signTransaction || !connection) throw new Error("Wallet not ready. Connect Phantom and try again.");
+          addStep("Waiting for Phantom approval...");
+          const txBytes = Buffer.from(prepData.txBase64!, "base64");
+          const transferTx = VersionedTransaction.deserialize(txBytes);
+          const signedTx = await signTransaction(transferTx);
+
+          addStep("Sending SOL...");
+          let transferSig: string;
           try {
-            const TOKEN_2022 = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
-            const ataRes = await connection.getTokenAccountsByOwner(ownerPk, { programId: new PublicKey(TOKEN_2022) });
-            for (const { pubkey, account } of ataRes.value) {
-              // Token-2022 account: bytes 0-31 = mint
-              const mintInAccount = new PublicKey(account.data.slice(0, 32)).toBase58();
-              if (mintInAccount === mintStr) {
-                recoveredStokenAccount = pubkey.toBase58();
-                break;
-              }
+            transferSig = await connection.sendRawTransaction(signedTx.serialize(), {
+              skipPreflight: true,
+              preflightCommitment: "confirmed",
+            });
+          } catch (sendErr) {
+            const msg = sendErr instanceof Error ? sendErr.message : String(sendErr);
+            if (msg.includes("block height exceeded") || msg.includes("blockhash")) throw new Error("Transaction expired. Please try again.");
+            throw sendErr;
+          }
+
+          addStep("Waiting for confirmation...");
+          const transferDeadline = Date.now() + 60_000;
+          while (Date.now() < transferDeadline) {
+            await new Promise((r) => setTimeout(r, 1500));
+            const s = (await connection.getSignatureStatus(transferSig, { searchTransactionHistory: true })).value;
+            if (s && !s.err && (s.confirmationStatus === "confirmed" || s.confirmationStatus === "finalized")) break;
+            if (s?.err) throw new Error("SOL transfer failed on-chain.");
+          }
+          addStep("Transfer confirmed.");
+        }
+
+        addStep("Shielding on-chain...");
+        const confirmData = await apiPost<{
+          txSig: string;
+          status: string;
+          mintStoken: string;
+          stokenAccount: string;
+          codeHash: string;
+          chainDepth: number;
+          sim?: boolean;
+        }>("/api/vault/confirm-shield", { pendingId: prepData.pendingId, wallet: publicKey });
+
+        if (!confirmData.sim) {
+          addStep("Waiting for shield confirmation...");
+          const pollDeadline = Date.now() + 90_000;
+          let done = false;
+          while (Date.now() < pollDeadline && !done) {
+            await new Promise((r) => setTimeout(r, 1500));
+            try {
+              const resp = await fetch(
+                `/api/vault/shield-status?sig=${encodeURIComponent(confirmData.txSig)}&wallet=${encodeURIComponent(publicKey)}`,
+              );
+              const st = await resp.json() as { confirmationStatus: string; err?: unknown; vaultSaved?: boolean };
+              if (st.err) throw new Error("Shield failed on-chain.");
+              if ((st.confirmationStatus === "confirmed" || st.confirmationStatus === "finalized") && st.vaultSaved) done = true;
+            } catch (pe) {
+              if (pe instanceof Error && pe.message.startsWith("Shield failed")) throw pe;
             }
-          } catch {
-            // non-fatal: stokenAccount will remain undefined
           }
-          await createVaultMutation.mutateAsync({
-            data: {
-              wallet: publicKey,
-              codeHash,
-              chainDepth: existingOnchain.chainDepth,
-              token: baseToken,
-              amount: parseFloat(amount),
-              mint: mintStr,
-              stokenAccount: recoveredStokenAccount,
-              txSig: undefined,
-            },
-          });
-
-          setProcessingLabel("Preparing gasless deposit...");
-          const prepRes = await fetch("/api/vault/prepare-deposit", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ wallet: publicKey, amount: parseFloat(amount) }),
-          });
-          if (!prepRes.ok) {
-            const e = await prepRes.json().catch(() => ({ error: "Failed to prepare deposit" })) as { error?: string };
-            throw new Error(e.error ?? "Failed to prepare deposit");
-          }
-          const { txBase64 } = await prepRes.json() as { txBase64: string };
-
-          setProcessingLabel("Waiting for Phantom approval...");
-          const txSig = await relaySignAndConfirm(txBase64);
-          await depositMutation.mutateAsync({ data: { wallet: publicKey, token: baseToken, amount: parseFloat(amount), txSig } });
-          await invalidateAll();
-          setShieldMintToken(mintStr);
-          setShieldOnchainSig(txSig);
-          setShieldSuccess(true);
-        } else {
-          // Fresh vault: build tx server-side (owner is fee payer so Phantom signs correctly)
-          setProcessingLabel("Preparing vault creation...");
-          const prepRes = await fetch("/api/vault/prepare-init", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ wallet: publicKey, codeHash, amount: parseFloat(amount), chainDepth: 32 }),
-          });
-          if (!prepRes.ok) {
-            const e = await prepRes.json().catch(() => ({ error: "Failed to prepare transaction" })) as { error?: string };
-            throw new Error(e.error ?? "Failed to prepare transaction");
-          }
-          const { txBase64, mintStoken, stokenAccount } = await prepRes.json() as {
-            txBase64: string;
-            mintStoken: string;
-            stokenAccount: string;
-          };
-
-          // Broadcast directly: owner is fee payer so relay is not needed for signing.
-          // skipPreflight=true bypasses simulation which gives false negatives for
-          // account-creation transactions that have not yet been created on-chain.
-          setProcessingLabel("Waiting for Phantom approval...");
-          const txBytes = Buffer.from(txBase64, "base64");
-          const vaultInitTx = VersionedTransaction.deserialize(txBytes);
-          const signedVaultInitTx = await signTransaction(vaultInitTx);
-          setProcessingLabel("Submitting vault creation...");
-          const txSig = await sendAndConfirm(signedVaultInitTx.serialize(), true);
-          setProcessingLabel("Saving vault record...");
-          await createVaultMutation.mutateAsync({
-            data: {
-              wallet: publicKey,
-              codeHash,
-              chainDepth: 32,
-              token: baseToken,
-              amount: parseFloat(amount),
-              mint: mintStoken,
-              stokenAccount,
-              txSig,
-            },
-          });
-          await invalidateAll();
-          setShieldMintToken(mintStoken);
-          setShieldOnchainSig(txSig);
-          setShieldSuccess(true);
+          addStep("Vault sealed.");
         }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        setOpError(msg);
-      } finally {
-        setIsProcessing(false);
-        setProcessingLabel("");
-      }
-    } else {
-      if (!signTransaction || !connection) {
-        setOpError("Wallet not ready. Connect Phantom and try again.");
-        setIsProcessing(false);
-        return;
-      }
-      if (baseToken !== "SOL") {
-        setOpError("Only SOL deposits are supported on-chain currently.");
-        setIsProcessing(false);
-        return;
-      }
 
-      try {
-        setProcessingLabel("Preparing gasless deposit...");
-        const prepRes = await fetch("/api/vault/prepare-deposit", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ wallet: publicKey, amount: parseFloat(amount) }),
+        addStep("Saving vault record...");
+        await createVaultMutation.mutateAsync({
+          data: {
+            wallet: publicKey,
+            codeHash,
+            chainDepth: confirmData.chainDepth,
+            token: baseToken,
+            amount: parseFloat(amount),
+            mint: confirmData.mintStoken,
+            stokenAccount: confirmData.stokenAccount,
+            txSig: confirmData.txSig,
+          },
         });
-        if (!prepRes.ok) {
-          const e = await prepRes.json().catch(() => ({ error: "Failed to prepare deposit" })) as { error?: string };
-          throw new Error(e.error ?? "Failed to prepare deposit");
-        }
-        const { txBase64 } = await prepRes.json() as { txBase64: string };
-
-        setProcessingLabel("Waiting for Phantom approval...");
-        const txSig = await relaySignAndConfirm(txBase64);
-        await depositMutation.mutateAsync({ data: { wallet: publicKey, token: baseToken, amount: parseFloat(amount), txSig } });
         await invalidateAll();
-        setShieldOnchainSig(txSig);
+        setShieldMintToken(confirmData.mintStoken);
+        setShieldOnchainSig(confirmData.txSig);
         setShieldSuccess(true);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         setOpError(msg);
       } finally {
         setIsProcessing(false);
-        setProcessingLabel("");
+        setProcessingSteps([]);
+      }
+    } else {
+      // EXISTING VAULT DEPOSIT: two-step flow.
+      // Step 1: prepare-deposit returns a plain SystemProgram.transfer for user to sign.
+      // Step 2: confirm-deposit: server verifies SOL arrived, calls deposit ix server-side.
+      if (baseToken !== "SOL") {
+        setOpError("Only SOL deposits are supported currently.");
+        setIsProcessing(false);
+        return;
+      }
+
+      try {
+        addStep("Preparing deposit...");
+        const prepData = await apiPost<{
+          sim?: boolean;
+          pendingId: string;
+          txBase64?: string;
+        }>("/api/vault/prepare-deposit", { wallet: publicKey, amount: parseFloat(amount) });
+
+        if (!prepData.sim) {
+          if (!signTransaction || !connection) throw new Error("Wallet not ready. Connect Phantom and try again.");
+          addStep("Waiting for Phantom approval...");
+          const txBytes = Buffer.from(prepData.txBase64!, "base64");
+          const transferTx = VersionedTransaction.deserialize(txBytes);
+          const signedTx = await signTransaction(transferTx);
+          addStep("Submitting SOL transfer...");
+          await sendAndConfirm(signedTx.serialize(), true);
+        }
+
+        addStep("Processing deposit on-chain...");
+        const confirmData = await apiPost<{ txSig: string; sim?: boolean }>(
+          "/api/vault/confirm-deposit",
+          { pendingId: prepData.pendingId, wallet: publicKey },
+        );
+
+        await depositMutation.mutateAsync({
+          data: { wallet: publicKey, token: baseToken, amount: parseFloat(amount), txSig: confirmData.txSig },
+        });
+        await invalidateAll();
+        setShieldOnchainSig(confirmData.txSig);
+        setShieldSuccess(true);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setOpError(msg);
+      } finally {
+        setIsProcessing(false);
+        setProcessingSteps([]);
       }
     }
   };
@@ -545,88 +583,81 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
   const handleUnshield = async () => {
     if (!publicKey || !unshieldReady) return;
     setOpError("");
+
     setIsProcessing(true);
-    setProcessingLabel("Verifying OTS proof...");
+    addStep("Verifying OTS proof...");
     try {
       const preimage = await deriveOtsPreimage(vaultCode, publicKey, chainDepth, 1);
       const result = await unshieldMutation.mutateAsync({
-        data: { wallet: publicKey, amount: parseFloat(amount), destination, preimage, token: baseToken },
+        data: { wallet: publicKey, amount: parseFloat(amount), destination: publicKey, preimage, token: baseToken },
       });
 
       // DB already updated by API at this point: flush UI immediately
       await invalidateAll();
 
-      let txSig: string | null = null;
-      const txBase64 = result.txBase64 ?? null;
-      if (txBase64 && signTransaction && connection) {
+      // private_send is fully server-side -- relayer signs and broadcasts.
+      // No Phantom approval needed. Poll for on-chain confirmation using returned txSig.
+      const txSig: string | null = (result as unknown as Record<string, unknown>).txSig as string | null ?? null;
+      const isSim = txSig?.startsWith("sim:") ?? false;
+      if (txSig && connection && !isSim) {
         try {
-          setProcessingLabel("Waiting for Phantom approval...");
-          txSig = await relaySignAndConfirm(txBase64);
-          // Second invalidate after on-chain confirmation for final accuracy
+          addStep("Waiting for confirmation...");
+          for (let i = 0; i < 20; i++) {
+            const statusRes = await connection.getSignatureStatus(txSig, { searchTransactionHistory: true });
+            const status = statusRes.value;
+            if (status && !status.err && (status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized")) {
+              addStep("Unshield confirmed.");
+              break;
+            }
+            if (status?.err) break;
+            await new Promise((r) => setTimeout(r, 2000));
+          }
           await invalidateAll();
-        } catch {
-          // Non-fatal: OTS already verified and recorded, balance already updated
-        }
+        } catch { /* non-fatal poll failure */ }
       }
 
       setUnshieldSuccess({ newDepth: result.newChainDepth, txSig });
-    } catch {
-      setOpError("Vault code incorrect or OTS verification failed. Check your vault code and try again.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const apiMsg = (() => { try { return JSON.parse(msg).error as string; } catch { return null; } })();
+      setOpError(apiMsg ?? msg ?? "Unshield failed. Check vault code and try again.");
     } finally {
       setIsProcessing(false);
-      setProcessingLabel("");
+      setProcessingSteps([]);
     }
   };
 
-  // MINT handler: convert sToken to aToken via OTS-verified airsign/prepare (off-chain)
-  // On-chain convert_to_airtoken is available once program deploys - builder ready in @workspace/program
+  // MINT handler: Step 1 -- burn sSOL on-chain, lock SOL in escrow. No recipient yet.
   const handleMint = async () => {
-    if (!publicKey || !mintReady) return;
-    setOpError("");
+    if (!publicKey || !canSubmitAmount || !isValidCode || !vaultExists || chainDepth <= 0) return;
     setIsProcessing(true);
-    setProcessingLabel("Verifying OTS proof...");
+    setOpError("");
+    addStep("Deriving OTS pre-image...");
     try {
       const preimage = await deriveOtsPreimage(vaultCode, publicKey, chainDepth, 1);
-
-      let txSig: string | null = null;
-      if (onchainVault?.mintStoken && signTransaction && connection) {
-        try {
-          setProcessingLabel("Waiting for Phantom approval...");
-          const ownerPk = new PublicKey(publicKey);
-          const mintStokenPk = new PublicKey(onchainVault.mintStoken);
-          const ownerStokenAtaStr = vault?.stokenAccount;
-          if (!ownerStokenAtaStr) throw new Error("sToken account not on record");
-          const ownerStokenAtaPk = new PublicKey(ownerStokenAtaStr);
-          const mintAtokenKp = Keypair.generate();
-          const escrowAtokenKp = Keypair.generate();
-          const amountLamports = BigInt(Math.round(parseFloat(amount) * LAMPORTS_PER_SOL));
-          const ix = buildConvertToAirtokenIx(
-            ownerPk, mintStokenPk, ownerStokenAtaPk,
-            mintAtokenKp.publicKey, escrowAtokenKp.publicKey,
-            { otsPreimage: hexToUint8Array(preimage), amount: amountLamports }
-          );
-          const tx = await buildVersionedTx(connection, ownerPk, [ix]);
-          tx.sign([mintAtokenKp, escrowAtokenKp]);
-          const signed = await signTransaction(tx);
-          setProcessingLabel("Broadcasting transaction...");
-          txSig = await sendAndConfirm(signed.serialize());
-        } catch {
-          // Fall through to off-chain path
-        }
-      }
-
-      setProcessingLabel("Minting aToken...");
+      addStep("Broadcasting on-chain...");
       const result = await mintMutation.mutateAsync({
-        data: { wallet: publicKey, token: baseToken, amount: parseFloat(amount), preimage, expiryHours: parseInt(expiry) || 24 },
+        data: {
+          wallet: publicKey,
+          otsPreimage: preimage,
+          amount: parseFloat(amount),
+          token: baseToken,
+        },
       });
       await invalidateAll();
-      setMintSuccess({ aToken: result.aToken, amount: result.amount, nonce: result.nonce, expiresAt: result.expiresAt, newDepth: result.newChainDepth });
-      void txSig;
-    } catch {
-      setOpError("Vault code incorrect or mint failed. Check your vault code and try again.");
+      setMintSuccess({
+        aToken: "a" + baseToken,
+        amount: parseFloat(amount),
+        nonce: result.nonce,
+        newDepth: result.newDepth,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const apiMsg = (() => { try { return JSON.parse(msg).error as string; } catch { return null; } })();
+      setOpError(apiMsg ?? msg ?? "Mint failed. Check vault code and try again.");
     } finally {
       setIsProcessing(false);
-      setProcessingLabel("");
+      setProcessingSteps([]);
     }
   };
 
@@ -635,10 +666,10 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
     setZkError("");
     setZkPending(true);
     setIsProcessing(true);
-    setProcessingLabel("Verifying OTS proof...");
+    addStep("Verifying OTS proof...");
     try {
       const preimage = await deriveOtsPreimage(vaultCode, publicKey, chainDepth, 1);
-      setProcessingLabel("Contacting SignitoRelay...");
+      addStep("Contacting SignitoRelay...");
       const sendAmt = parseFloat(amount);
       const result = await zkTransferMutation.mutateAsync({
         data: {
@@ -672,75 +703,82 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
     } finally {
       setZkPending(false);
       setIsProcessing(false);
-      setProcessingLabel("");
+      setProcessingSteps([]);
     }
   };
 
+  // VOUCHER handler: Step 2 -- sign offline and attach voucher to an existing minted aSOL escrow.
   const handleCreateVoucher = async () => {
-    if (!publicKey || !isValidCode || !destination || !canSubmitAmount || !vaultExists || chainDepth <= 0) return;
+    if (!publicKey || !destination || !selectedNonce) return;
+    if (!signMessage) {
+      setOpError("Wallet does not support message signing. Use Phantom.");
+      return;
+    }
+
+    const mint = mintsData?.mints?.find((m) => m.nonce === selectedNonce);
+    if (!mint) {
+      setOpError("Selected aSOL mint not found.");
+      return;
+    }
+
     setIsProcessing(true);
-    setProcessingLabel("Verifying OTS proof...");
+    setOpError("");
+    addStep("Validating recipient...");
     try {
-      const preimage = await deriveOtsPreimage(vaultCode, publicKey, chainDepth, 1);
+      const { PublicKey: PK } = await import("@solana/web3.js");
 
-      setProcessingLabel("Minting aToken...");
-      const expiryHours = parseInt(expiry) || 24;
-      const mintResult = await mintMutation.mutateAsync({
-        data: { wallet: publicKey, token: baseToken, amount: parseFloat(amount), preimage, expiryHours },
-      });
-
-      const { nonce, depthAtIssue, expiresAt } = mintResult;
-      const expiryMs = new Date(expiresAt).getTime();
-
-      // Build 64-byte binary voucher message (128 hex chars)
-      // Layout: [0..8] magic "AIRSIGN\0", [8..12] version=1 uint32LE,
-      //         [12..20] amount_lamports uint64LE, [20..32] reserved,
-      //         [32..40] expiry_ms uint64LE, [40..56] nonce (16 bytes),
-      //         [56..64] depthAtIssue uint64LE
-      const msgBytes = new Uint8Array(64);
-      const view = new DataView(msgBytes.buffer);
-      "AIRSIGN".split("").forEach((c, i) => { msgBytes[i] = c.charCodeAt(0); });
-      view.setUint32(8, 1, true);
-      view.setBigUint64(12, BigInt(Math.round(parseFloat(amount) * LAMPORTS_PER_SOL)), true);
-      view.setBigUint64(32, BigInt(expiryMs), true);
-      for (let i = 0; i < 16; i++) msgBytes[40 + i] = parseInt(nonce.slice(i * 2, i * 2 + 2), 16);
-      view.setBigUint64(56, BigInt(depthAtIssue), true);
-
-      const msgHex = Array.from(msgBytes).map((b) => b.toString(16).padStart(2, "0")).join("");
-
-      setProcessingLabel("Waiting for signature...");
-      let sigHex = "00".repeat(64);
-      if (signMessage) {
-        const sigBytes = await signMessage(msgBytes);
-        sigHex = Array.from(sigBytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+      let recipientBytes: Uint8Array;
+      try {
+        recipientBytes = new PK(destination).toBytes();
+      } catch {
+        setOpError("Invalid recipient address.");
+        setIsProcessing(false);
+        return;
       }
 
-      setProcessingLabel("Registering voucher...");
-      await createVoucherMutation.mutateAsync({
-        data: {
-          wallet: publicKey,
-          nonce,
-          recipient: destination,
-          voucherMsgHex: msgHex,
-          sigHex,
-          token: baseToken,
-          amount: parseFloat(amount),
-          depthAtIssue,
-          expiresAt,
-        },
+      // Build 57-byte voucher message:
+      // byte  0:     domain separator 0x53 ('S') -- ensures first byte is never 0x80
+      //              so Phantom's signMessage never mistakes the binary as a versioned tx
+      // bytes 1-8:   amount u64 LE
+      // bytes 9-40:  recipient pubkey (32 bytes)
+      // bytes 41-56: nonce (16 bytes)
+      const amountLamports = BigInt(Math.round(mint.amount * LAMPORTS_PER_SOL));
+      const nonceBytes = new Uint8Array(16);
+      for (let i = 0; i < 16; i++) {
+        nonceBytes[i] = parseInt(selectedNonce.slice(i * 2, i * 2 + 2), 16);
+      }
+
+      const msgBytes = new Uint8Array(57);
+      msgBytes[0] = 0x53; // 'S' domain separator
+      const view = new DataView(msgBytes.buffer);
+      view.setBigUint64(1, amountLamports, true);
+      msgBytes.set(recipientBytes, 9);
+      msgBytes.set(nonceBytes, 41);
+
+      const voucherMsgHex = Array.from(msgBytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+
+      addStep("Waiting for Phantom signature...");
+      const sigBytes = await signMessage(msgBytes);
+      const sigHex = Array.from(sigBytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+
+      addStep("Storing voucher...");
+      await attachVoucherMutation.mutateAsync({
+        data: { wallet: publicKey, nonce: selectedNonce, voucherMsgHex, sigHex },
       });
 
-      await invalidateAll();
+      await refetchMints();
 
       const basePath = (import.meta.env.BASE_URL as string).replace(/\/$/, "");
-      const claimUrl = `${window.location.origin}${basePath}/claim/${nonce}`;
-      setVoucherJson(claimUrl);
+      const claimUrl = `${window.location.origin}${basePath}/claim/${selectedNonce}`;
+      setVoucherClaimUrl(claimUrl);
       setVoucherStep("done");
     } catch (err) {
-      setOpError(err instanceof Error ? err.message : "Voucher creation failed. Check vault code.");
+      const msg = err instanceof Error ? err.message : String(err);
+      const apiMsg = (() => { try { return JSON.parse(msg).error as string; } catch { return null; } })();
+      setOpError(apiMsg ?? msg ?? "Voucher creation failed.");
     } finally {
       setIsProcessing(false);
-      setProcessingLabel("");
+      setProcessingSteps([]);
     }
   };
 
@@ -760,7 +798,7 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
 
   const TxLink = ({ sig, label }: { sig: string; label?: string }) => (
     <a
-      href={`https://solscan.io/tx/${sig}`}
+      href={`https://orbmarkets.io/tx/${sig}`}
       target="_blank"
       rel="noopener noreferrer"
       className="text-[#FF6B00] hover:text-white font-['JetBrains_Mono'] text-xs truncate max-w-[150px]"
@@ -772,40 +810,24 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
   const isPending =
     createVaultMutation.isPending ||
     depositMutation.isPending ||
-    unshieldMutation.isPending ||
-    mintMutation.isPending;
+    unshieldMutation.isPending;
 
   return (
     <div className="flex flex-col h-full relative">
       {/* Processing overlay */}
       {isProcessing && (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#0A0A0A]/85 backdrop-blur-[2px] rounded-none">
-          <svg
-            className="animate-spin mb-4"
-            width="40"
-            height="40"
-            viewBox="0 0 40 40"
-            fill="none"
-          >
-            <circle
-              cx="20"
-              cy="20"
-              r="16"
-              stroke="#2A2A2A"
-              strokeWidth="3"
-            />
-            <path
-              d="M20 4 A16 16 0 0 1 36 20"
-              stroke="#FF6B00"
-              strokeWidth="3"
-              strokeLinecap="round"
-            />
-          </svg>
-          {processingLabel && (
-            <p className="text-[#FF6B00] text-xs font-['JetBrains_Mono'] tracking-wider">
-              {processingLabel}
-            </p>
-          )}
+        <div className="absolute inset-0 z-50 flex flex-col justify-center bg-[#0A0A0A]/95 rounded-none px-6 py-8">
+          <div className="flex flex-col items-center gap-3 w-full max-w-xs mx-auto">
+            <svg className="animate-spin shrink-0" width="36" height="36" viewBox="0 0 40 40" fill="none">
+              <circle cx="20" cy="20" r="16" stroke="#2A2A2A" strokeWidth="3" />
+              <path d="M20 4 A16 16 0 0 1 36 20" stroke="#FF6B00" strokeWidth="3" strokeLinecap="round" />
+            </svg>
+            {processingSteps.length > 0 && (
+              <p className="text-[#FF6B00] text-xs font-['JetBrains_Mono'] tracking-wider leading-snug text-center mt-1">
+                {processingSteps[processingSteps.length - 1]}
+              </p>
+            )}
+          </div>
         </div>
       )}
 
@@ -927,6 +949,45 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
                     )}
                   </div>
                 </div>
+                <div className="pt-3 border-t border-green-500/20 space-y-3">
+                  <p className="text-[#888888] text-xs font-['JetBrains_Mono'] leading-relaxed">
+                    s{baseToken} uses SPL Token-2022 NonTransferable. It cannot be sent or stolen. Only the vault program can move it. Your wallet may hide it as spam. Add it manually using the address below.
+                  </p>
+                  <div>
+                    <p className="text-[#888888] text-xs font-['JetBrains_Mono'] mb-1.5">s{baseToken} contract address</p>
+                    <button
+                      className="w-full border border-[#333333] text-white text-xs font-['JetBrains_Mono'] py-2 px-3 flex items-center justify-between gap-2 hover:border-[#FF6B00] hover:text-[#FF6B00] transition-colors group"
+                      onClick={() => {
+                        const ca = shieldMintToken || SSOL_CA;
+                        void navigator.clipboard.writeText(ca).then(() => {
+                          setCaCopied(true);
+                          setTimeout(() => setCaCopied(false), 2000);
+                        });
+                      }}
+                      title="Copy contract address"
+                    >
+                      <span className="truncate">{shieldMintToken || SSOL_CA}</span>
+                      <span className={`shrink-0 transition-colors ${caCopied ? "text-green-400" : "text-[#555555] group-hover:text-[#FF6B00]"}`}>
+                        {caCopied ? "copied" : "copy"}
+                      </span>
+                    </button>
+                  </div>
+                  <div className="space-y-1.5">
+                    <p className="text-[#666666] text-xs font-['JetBrains_Mono'] uppercase tracking-wider">How to add to Phantom</p>
+                    {[
+                      "Copy the contract address above.",
+                      "Open Phantom and go to the tokens tab.",
+                      "Tap the search icon and paste the address.",
+                      "s" + baseToken + " will appear. Tap it.",
+                      'Phantom may show a spam warning. Tap "Mark as not spam".',
+                    ].map((step, i) => (
+                      <div key={i} className="flex gap-2 text-xs font-['JetBrains_Mono'] text-[#666666]">
+                        <span className="text-[#FF6B00] shrink-0">{String(i + 1).padStart(2, "0")}.</span>
+                        <span>{step}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             ) : (
               <>
@@ -940,21 +1001,51 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
                     onChange={(e) => setAmount(e.target.value)}
                   />
                   <p className="text-[#888888] text-xs font-['JetBrains_Mono'] mt-1.5">
-                    Max: {tokenBalance.toFixed(4)} {tokenSymbol}
+                    Max:{" "}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const max = tokenSymbol === "SOL"
+                          ? Math.max(0, tokenBalance - 0.001)
+                          : tokenBalance;
+                        setAmount(max.toFixed(4));
+                      }}
+                      className="text-[#FF6B00] hover:text-white transition-colors"
+                    >
+                      {tokenSymbol === "SOL"
+                        ? Math.max(0, tokenBalance - 0.001).toFixed(4)
+                        : tokenBalance.toFixed(4)} {tokenSymbol}
+                    </button>
                   </p>
+                  {solReserveViolated && (
+                    <p className="text-red-400 text-xs font-['JetBrains_Mono'] mt-1.5">
+                      Minimum 0.001 SOL must remain in your wallet.
+                    </p>
+                  )}
                 </div>
 
                 {shieldNeedsCode && (
                   <div>
                     <Label>Set Vault Code</Label>
-                    <input
-                      type="password"
-                      className="input-field"
-                      maxLength={8}
-                      placeholder="8 chars (e.g. abcd1234)"
-                      value={vaultCode}
-                      onChange={(e) => setVaultCode(e.target.value)}
-                    />
+                    <div className="relative">
+                      <input
+                        type={showVaultCode ? "text" : "password"}
+                        className="input-field"
+                        style={{ paddingRight: "2.5rem" }}
+                        maxLength={8}
+                        autoComplete="off"
+                        placeholder="8 chars (e.g. abcd1234)"
+                        value={vaultCode}
+                        onChange={(e) => setVaultCode(e.target.value)}
+                      />
+                      <button type="button" onClick={() => setShowVaultCode((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#555] hover:text-[#888888] transition-colors">
+                        {showVaultCode ? (
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M1 1l22 22"/></svg>
+                        ) : (
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        )}
+                      </button>
+                    </div>
                     {vaultCode.length > 0 && !isValidCode && (
                       <p className="text-[#FF6B00] text-xs font-['JetBrains_Mono'] mt-1">
                         {vaultCode.length < 8
@@ -1009,7 +1100,7 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
                   OTS verified, unshield {unshieldSuccess.txSig ? "submitted" : "queued"}
                 </p>
                 <p className="text-[#888888] text-xs font-['JetBrains_Mono']">
-                  {amount} {tokenSymbol} released to destination. OTS depth decremented.
+                  {(parseFloat(amount) * 0.9985).toFixed(6)} {baseToken} released to your wallet (0.15% relay fee deducted). OTS depth decremented.
                 </p>
                 <div className="pt-2 border-t border-green-500/20 space-y-1">
                   <div className="flex justify-between text-xs font-['JetBrains_Mono']">
@@ -1018,9 +1109,7 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
                   </div>
                   <div className="flex justify-between text-xs font-['JetBrains_Mono']">
                     <span className="text-[#888888]">To</span>
-                    <span className="text-white font-['JetBrains_Mono'] text-xs">
-                      {destination.slice(0, 8)}...{destination.slice(-6)}
-                    </span>
+                    <span className="text-white font-['JetBrains_Mono'] text-xs">your wallet</span>
                   </div>
                   <div className="flex justify-between text-xs font-['JetBrains_Mono']">
                     <span className="text-[#888888]">OTS depth remaining</span>
@@ -1049,7 +1138,7 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
               <>
                 {publicKey && (
                   <div className={`border rounded p-3 space-y-1 ${
-                    vaultExists ? "border-[#FF6B00]/30 bg-[#FF6B00]/5" : "border-red-500/30 bg-[#0A0A0A]"
+                    vaultExists ? "border-[#2A2A2A] bg-[#0D0D0D]" : "border-red-500/30 bg-[#0A0A0A]"
                   }`}>
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-['JetBrains_Mono'] text-[#888888] uppercase tracking-wider">
@@ -1096,34 +1185,51 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
                     onChange={(e) => setAmount(e.target.value)}
                   />
                   <p className="text-[#888888] text-xs font-['JetBrains_Mono'] mt-1.5">
-                    Max: {tokenBalance.toFixed(4)} {tokenSymbol}
+                    Max:{" "}
+                    <button type="button" onClick={() => setAmount(tokenBalance.toString())} className="text-[#FF6B00] hover:text-white transition-colors">
+                      {tokenBalance.toFixed(4)} {tokenSymbol}
+                    </button>
                   </p>
                 </div>
 
-                <div>
-                  <Label>Destination Address</Label>
-                  <input
-                    type="text"
-                    className="input-field"
-                    placeholder="Solana address"
-                    value={destination}
-                    onChange={(e) => setDestination(e.target.value)}
-                  />
-                  <p className="text-[#888888] text-xs font-['JetBrains_Mono'] mt-1.5">
-                    Defaults to your wallet. Change to a fresh address to break the on-chain link.
-                  </p>
-                </div>
+                {canSubmitAmount && (
+                  <div className="border border-[#2A2A2A] rounded p-3 space-y-1">
+                    <div className="flex items-center justify-between text-xs font-['JetBrains_Mono']">
+                      <span className="text-[#888888]">You burn</span>
+                      <span className="text-white">{parseFloat(amount).toFixed(4)} s{baseToken}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs font-['JetBrains_Mono']">
+                      <span className="text-[#888888]">Relay fee (0.15%)</span>
+                      <span className="text-[#888888]">-{(parseFloat(amount) * 0.0015).toFixed(6)} {baseToken}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs font-['JetBrains_Mono'] border-t border-[#2A2A2A] pt-1">
+                      <span className="text-white font-bold">You receive</span>
+                      <span className="text-[#FF6B00] font-bold">{(parseFloat(amount) * 0.9985).toFixed(6)} {baseToken}</span>
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <Label>Vault Code</Label>
-                  <input
-                    type="password"
-                    className="input-field"
-                    maxLength={8}
-                    placeholder="e.g. AB12cd34"
-                    value={vaultCode}
-                    onChange={(e) => setVaultCode(e.target.value)}
-                  />
+                  <div className="relative">
+                    <input
+                      type={showVaultCode ? "text" : "password"}
+                      className="input-field"
+                      style={{ paddingRight: "2.5rem" }}
+                      maxLength={8}
+                      autoComplete="off"
+                      placeholder="e.g. AB12cd34"
+                      value={vaultCode}
+                      onChange={(e) => setVaultCode(e.target.value)}
+                    />
+                    <button type="button" onClick={() => setShowVaultCode((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#555] hover:text-[#888888] transition-colors">
+                      {showVaultCode ? (
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M1 1l22 22"/></svg>
+                      ) : (
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                      )}
+                    </button>
+                  </div>
                   {vaultCode.length > 0 && !isValidCode && (
                     <p className="text-[#FF6B00] text-xs font-['JetBrains_Mono'] mt-1">
                       Must be 8 chars: letters and numbers only (a-z, A-Z, 0-9)
@@ -1136,9 +1242,7 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
                 </div>
 
                 <InfoBox>
-                  s{baseToken} is NonTransferable (SPL Token-2022), it cannot be sent to
-                  another wallet. Unshield burns s{baseToken} and releases {baseToken} to
-                  destination. One OTS depth level consumed per unshield.
+                  s{baseToken} is NonTransferable (SPL Token-2022). Unshield burns s{baseToken} and releases {baseToken} back to your wallet. One OTS depth level consumed per unshield.
                 </InfoBox>
 
                 {opError && (
@@ -1156,17 +1260,55 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
               <div className="border border-green-500/40 bg-green-500/5 rounded p-4 space-y-2">
                 <p className="text-green-400 text-xs font-['JetBrains_Mono'] font-bold">Transfer complete</p>
                 <p className="text-[#888888] text-xs font-['JetBrains_Mono']">
-                  SignitoRelay sent {amount} {baseToken} to recipient. Your wallet has no on-chain trace.
+                  Recipient received {(parseFloat(amount) * 0.9985).toFixed(6)} {baseToken} (0.15% relay fee deducted). Your wallet has no on-chain trace.
                 </p>
                 <p className="text-[#888888] text-xs font-['JetBrains_Mono']">
                   {amount} {tokenSymbol} deducted from your shielded balance.
                 </p>
                 <TxLink sig={zkTxSig} label={`${zkTxSig.slice(0, 8)}...${zkTxSig.slice(-6)}`} />
               </div>
+            ) : !zkCexConfirmed ? (
+              <>
+                <div className="border border-[#FF6B00]/40 bg-[#FF6B00]/5 rounded p-4 space-y-1">
+                  <p className="text-[#FF6B00] text-xs font-['JetBrains_Mono'] font-bold uppercase tracking-wider">Before you send</p>
+                  <p className="text-[#AAAAAA] text-xs font-['JetBrains_Mono'] leading-relaxed">
+                    Do not send to a CEX deposit address. SignitoRelay is the on-chain sender, so exchanges will not credit the funds and may freeze them permanently.
+                  </p>
+                </div>
+
+                <div className="space-y-2.5">
+                  {[
+                    "The recipient is not a CEX deposit address (Binance, Coinbase, OKX, Kraken, etc.)",
+                    "I understand funds sent to a CEX deposit address may be lost permanently",
+                  ].map((label, i) => (
+                    <label key={i} className="flex items-start gap-3 cursor-pointer group">
+                      <div
+                        className={`mt-0.5 w-4 h-4 flex-shrink-0 border rounded-sm flex items-center justify-center transition-colors ${
+                          zkCexChecks[i]
+                            ? "border-[#FF6B00] bg-[#FF6B00]"
+                            : "border-[#444] bg-[#111] group-hover:border-[#FF6B00]/60"
+                        }`}
+                        onClick={() => {
+                          const next = [...zkCexChecks];
+                          next[i] = !next[i];
+                          setZkCexChecks(next);
+                        }}
+                      >
+                        {zkCexChecks[i] && (
+                          <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                            <path d="M1 4L3.5 6.5L9 1" stroke="#0A0A0A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                      </div>
+                      <span className="text-xs font-['JetBrains_Mono'] text-[#AAAAAA] leading-relaxed">{label}</span>
+                    </label>
+                  ))}
+                </div>
+              </>
             ) : (
               <>
                 {publicKey && (
-                  <div className={`border rounded p-3 space-y-1 ${vaultExists ? "border-[#FF6B00]/30 bg-[#FF6B00]/5" : "border-red-500/30 bg-[#0A0A0A]"}`}>
+                  <div className={`border rounded p-3 space-y-1 ${vaultExists ? "border-[#2A2A2A] bg-[#0D0D0D]" : "border-red-500/30 bg-[#0A0A0A]"}`}>
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-['JetBrains_Mono'] text-[#888888] uppercase tracking-wider">Vault Status</span>
                       {vaultLoading ? (
@@ -1200,34 +1342,65 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
                     min="0.001"
                   />
                   <p className="text-[#888888] text-xs font-['JetBrains_Mono'] mt-1.5">
-                    Available: {tokenBalance.toFixed(4)} {tokenSymbol}
+                    Available:{" "}
+                    <button type="button" onClick={() => setAmount(tokenBalance.toString())} className="text-[#FF6B00] hover:text-white transition-colors">
+                      {tokenBalance.toFixed(4)} {tokenSymbol}
+                    </button>
                   </p>
                 </div>
+
+                {canSubmitAmount && (
+                  <div className="border border-[#2A2A2A] rounded p-3 space-y-1">
+                    <div className="flex items-center justify-between text-xs font-['JetBrains_Mono']">
+                      <span className="text-[#888888]">You send</span>
+                      <span className="text-white">{parseFloat(amount).toFixed(4)} s{baseToken}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs font-['JetBrains_Mono']">
+                      <span className="text-[#888888]">Relay fee (0.15%)</span>
+                      <span className="text-[#888888]">-{(parseFloat(amount) * 0.0015).toFixed(6)} {baseToken}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs font-['JetBrains_Mono'] border-t border-[#2A2A2A] pt-1">
+                      <span className="text-white font-bold">Recipient gets</span>
+                      <span className="text-[#FF6B00] font-bold">{(parseFloat(amount) * 0.9985).toFixed(6)} {baseToken}</span>
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <Label>Recipient Address</Label>
                   <input
                     type="text"
                     className="input-field"
-                    placeholder="Fresh Solana address"
+                    placeholder="Destination Solana address"
                     value={zkRecipient}
                     onChange={(e) => setZkRecipient(e.target.value.trim())}
                   />
                   <p className="text-[#888888] text-xs font-['JetBrains_Mono'] mt-1.5">
-                    Use a fresh wallet. On-chain: relay to recipient only.
+                    Self-custodied wallet only. On-chain: relay to recipient, no trace to your wallet.
                   </p>
                 </div>
 
                 <div>
                   <Label>Vault Code</Label>
-                  <input
-                    type="password"
-                    className="input-field"
-                    maxLength={8}
-                    placeholder="e.g. AB12cd34"
-                    value={vaultCode}
-                    onChange={(e) => setVaultCode(e.target.value)}
-                  />
+                  <div className="relative">
+                    <input
+                      type={showVaultCode ? "text" : "password"}
+                      className="input-field"
+                      style={{ paddingRight: "2.5rem" }}
+                      maxLength={8}
+                      autoComplete="off"
+                      placeholder="e.g. AB12cd34"
+                      value={vaultCode}
+                      onChange={(e) => setVaultCode(e.target.value)}
+                    />
+                    <button type="button" onClick={() => setShowVaultCode((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#555] hover:text-[#888888] transition-colors">
+                      {showVaultCode ? (
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M1 1l22 22"/></svg>
+                      ) : (
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                      )}
+                    </button>
+                  </div>
                   {vaultCode.length > 0 && !isValidCode && (
                     <p className="text-[#FF6B00] text-xs font-['JetBrains_Mono'] mt-1">
                       Must be 8 chars: letters and numbers only (a-z, A-Z, 0-9)
@@ -1239,8 +1412,7 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
                 </div>
 
                 <InfoBox>
-                  No transaction from your wallet. SignitoRelay pays the fee and broadcasts.
-                  On-chain trace: relay wallet to recipient only.
+                  No transaction from your wallet. SignitoRelay pays the fee and broadcasts. The on-chain record shows relay to recipient only.
                 </InfoBox>
 
                 {!relayReady && (
@@ -1278,10 +1450,6 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
                     <span className="text-[#FF6B00] font-['JetBrains_Mono'] truncate">{mintSuccess.nonce.slice(0, 16)}...</span>
                   </div>
                   <div className="flex justify-between text-xs font-['JetBrains_Mono']">
-                    <span className="text-[#888888]">Expires</span>
-                    <span className="text-white">{new Date(mintSuccess.expiresAt).toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between text-xs font-['JetBrains_Mono']">
                     <span className="text-[#888888]">OTS depth remaining</span>
                     <span className={`font-bold ${mintSuccess.newDepth < 5 ? "text-red-400" : "text-[#FF6B00]"}`}>
                       {mintSuccess.newDepth}
@@ -1293,7 +1461,7 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
               <>
                 {publicKey && (
                   <div className={`border rounded p-3 space-y-1 ${
-                    vaultExists ? "border-[#FF6B00]/30 bg-[#FF6B00]/5" : "border-red-500/30 bg-[#0A0A0A]"
+                    vaultExists ? "border-[#2A2A2A] bg-[#0D0D0D]" : "border-red-500/30 bg-[#0A0A0A]"
                   }`}>
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-['JetBrains_Mono'] text-[#888888] uppercase tracking-wider">
@@ -1328,20 +1496,34 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
                     onChange={(e) => setAmount(e.target.value)}
                   />
                   <p className="text-[#888888] text-xs font-['JetBrains_Mono'] mt-1.5">
-                    Max: {tokenBalance.toFixed(4)} {tokenSymbol}
+                    Max:{" "}
+                    <button type="button" onClick={() => setAmount(tokenBalance.toString())} className="text-[#FF6B00] hover:text-white transition-colors">
+                      {tokenBalance.toFixed(4)} {tokenSymbol}
+                    </button>
                   </p>
                 </div>
 
                 <div>
                   <Label>Vault Code</Label>
-                  <input
-                    type="password"
-                    className="input-field"
-                    maxLength={8}
-                    placeholder="e.g. AB12cd34"
-                    value={vaultCode}
-                    onChange={(e) => setVaultCode(e.target.value)}
-                  />
+                  <div className="relative">
+                    <input
+                      type={showVaultCode ? "text" : "password"}
+                      className="input-field"
+                      style={{ paddingRight: "2.5rem" }}
+                      maxLength={8}
+                      autoComplete="off"
+                      placeholder="e.g. AB12cd34"
+                      value={vaultCode}
+                      onChange={(e) => setVaultCode(e.target.value)}
+                    />
+                    <button type="button" onClick={() => setShowVaultCode((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#555] hover:text-[#888888] transition-colors">
+                      {showVaultCode ? (
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M1 1l22 22"/></svg>
+                      ) : (
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                      )}
+                    </button>
+                  </div>
                   {vaultCode.length > 0 && !isValidCode && (
                     <p className="text-[#FF6B00] text-xs font-['JetBrains_Mono'] mt-1">
                       Must be 8 chars: letters and numbers only (a-z, A-Z, 0-9)
@@ -1349,21 +1531,6 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
                   )}
                   <p className="text-[#888888] text-xs font-['JetBrains_Mono'] mt-1.5">
                     OTS pre-image verified server-side. Consumes one depth level.
-                  </p>
-                </div>
-
-                <div>
-                  <Label>Voucher Expiry (hours)</Label>
-                  <input
-                    type="number"
-                    className="input-field"
-                    value={expiry}
-                    onChange={(e) => setExpiry(e.target.value)}
-                    min="1"
-                    max="8760"
-                  />
-                  <p className="text-[#888888] text-xs font-['JetBrains_Mono'] mt-1.5">
-                    aToken expires after this period. Default: 24h.
                   </p>
                 </div>
 
@@ -1401,65 +1568,77 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
           <>
             {voucherStep === "form" ? (
               <>
-                <div>
-                  <Label>Amount</Label>
-                  <input
-                    type="number"
-                    className="input-field"
-                    placeholder="0.00"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label>Recipient Address</Label>
-                  <input
-                    type="text"
-                    className="input-field"
-                    placeholder="Recipient Solana address"
-                    value={destination}
-                    onChange={(e) => setDestination(e.target.value)}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label>Expiry (hours)</Label>
-                    <input
-                      type="number"
-                      className="input-field"
-                      value={expiry}
-                      onChange={(e) => setExpiry(e.target.value)}
-                      min="1"
-                    />
+                {/* Pending mints selector */}
+                {!mintsData ? (
+                  <p className="text-[#888888] text-xs font-['JetBrains_Mono']">Loading aSOL balance...</p>
+                ) : mintsData.mints.length === 0 ? (
+                  <div className="border border-[#2A2A2A] bg-[#0D0D0D] rounded p-3">
+                    <p className="text-[#FF6B00] text-xs font-['JetBrains_Mono'] font-bold mb-1">No aSOL minted</p>
+                    <p className="text-[#888888] text-xs font-['JetBrains_Mono']">
+                      Mint aSOL first using the Mint button on the Shielded tab.
+                    </p>
                   </div>
-                  <div>
-                    <Label>Vault Code</Label>
-                    <input
-                      type="password"
-                      className="input-field"
-                      maxLength={8}
-                      placeholder="8 chars (e.g. abcd1234)"
-                      value={vaultCode}
-                      onChange={(e) => setVaultCode(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <InfoBox>
-                  Ed25519 signing is local, no internet required to create a voucher.
-                  Share QR code or JSON with the recipient to claim on-chain.
-                </InfoBox>
+                ) : (
+                  <>
+                    <div>
+                      <Label>Select aSOL to assign</Label>
+                      <div className="space-y-1">
+                        {mintsData.mints.map((m) => (
+                          <button
+                            key={m.nonce}
+                            onClick={() => setSelectedNonce(m.nonce)}
+                            className={`w-full text-left border rounded p-2.5 transition-all font-['JetBrains_Mono'] text-xs ${
+                              selectedNonce === m.nonce
+                                ? "border-[#FF6B00] bg-[#FF6B00]/10 text-white"
+                                : "border-[#2A2A2A] text-[#888888] hover:border-[#444]"
+                            }`}
+                          >
+                            <div className="flex justify-between items-center">
+                              <span className="font-bold">{m.amount.toFixed(4)} {"a" + m.token}</span>
+                              <span className="text-[10px] text-[#555]">{m.nonce.slice(0, 8)}...</span>
+                            </div>
+                            <div className="text-[10px] text-[#555] mt-0.5">
+                              {new Date(m.createdAt).toLocaleString()}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {selectedNonce && (
+                      <div>
+                        <Label>Recipient Address</Label>
+                        <input
+                          type="text"
+                          className="input-field"
+                          placeholder="Destination Solana address"
+                          value={destination}
+                          onChange={(e) => setDestination(e.target.value)}
+                        />
+                      </div>
+                    )}
+
+                    <InfoBox>
+                      Signing is offline: only your wallet key and recipient address needed. SOL was already locked on-chain at mint. Recipient or anyone with the link can claim.
+                    </InfoBox>
+
+                    {opError && (
+                      <p className="text-red-400 text-xs font-['JetBrains_Mono']">{opError}</p>
+                    )}
+                  </>
+                )}
               </>
             ) : (
               <>
                 <div className="border border-green-500/40 bg-green-500/5 rounded p-3">
-                  <p className="text-green-400 text-xs font-['JetBrains_Mono'] font-bold mb-1">Voucher created</p>
+                  <p className="text-green-400 text-xs font-['JetBrains_Mono'] font-bold mb-1">Voucher ready</p>
                   <p className="text-[#888888] text-xs font-['JetBrains_Mono']">
-                    Share the QR code or link with the recipient. Single-use, expires as set.
+                    Share QR or link. Single-use, no expiry. Recipient does not need a wallet connection.
                   </p>
                 </div>
                 <div className="flex flex-col items-center gap-3">
                   <div className="bg-white p-3 rounded">
-                    <QRCodeSVG value={voucherJson} size={164} />
+                    <QRCodeSVG value={voucherClaimUrl} size={164} />
                   </div>
                   <p className="text-[#888888] text-xs font-['JetBrains_Mono'] text-center">
                     Scan QR or share the link below
@@ -1467,12 +1646,12 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
                 </div>
                 <div className="bg-[#0A0A0A] border border-[#2A2A2A] rounded p-3">
                   <p className="text-[#888888] text-xs font-['JetBrains_Mono'] break-all leading-relaxed">
-                    {voucherJson}
+                    {voucherClaimUrl}
                   </p>
                 </div>
                 <button
                   className="btn-secondary w-full justify-center"
-                  onClick={() => navigator.clipboard.writeText(voucherJson)}
+                  onClick={() => void navigator.clipboard.writeText(voucherClaimUrl)}
                 >
                   Copy Claim Link
                 </button>
@@ -1498,9 +1677,26 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
           </button>
         )}
         {action === "shield" && shieldSuccess && (
-          <button className="btn-secondary w-full justify-center" onClick={onClose}>
-            Close
-          </button>
+          <>
+            <label className="flex items-start gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={shieldCloseConfirmed}
+                onChange={(e) => setShieldCloseConfirmed(e.target.checked)}
+                className="mt-0.5 shrink-0 accent-[#FF6B00] w-4 h-4 cursor-pointer"
+              />
+              <span className="text-xs font-['JetBrains_Mono'] text-[#888888] leading-relaxed">
+                I have noted the sSOL contract address and understand it may not appear in my wallet automatically.
+              </span>
+            </label>
+            <button
+              className="btn-secondary w-full justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+              disabled={!shieldCloseConfirmed}
+              onClick={onClose}
+            >
+              Close
+            </button>
+          </>
         )}
 
         {action === "unshield" && !unshieldSuccess && (
@@ -1511,7 +1707,9 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
           >
             {isPending
               ? "Verifying OTS..."
-              : `Unshield ${amount || "0"} ${tokenSymbol}`}
+              : parseFloat(amount || "0") > tokenBalance
+                ? `Insufficient ${tokenSymbol} balance`
+                : `Unshield ${amount || "0"} ${tokenSymbol}`}
           </button>
         )}
         {action === "unshield" && unshieldSuccess && (
@@ -1520,7 +1718,18 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
           </button>
         )}
 
-        {action === "zk-send" && !zkTxSig && (
+        {action === "zk-send" && !zkTxSig && !zkCexConfirmed && (
+          <button
+            className="btn-primary w-full justify-center"
+            disabled={zkCexChecks.some((c) => !c)}
+            onClick={() => setZkCexConfirmed(true)}
+          >
+            {zkCexChecks.some((c) => !c)
+              ? `Confirm ${zkCexChecks.filter(Boolean).length}/2 items above`
+              : "I understand, continue"}
+          </button>
+        )}
+        {action === "zk-send" && !zkTxSig && zkCexConfirmed && (
           <button
             className="btn-primary w-full justify-center"
             disabled={
@@ -1560,11 +1769,11 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
         {action === "mint" && !mintSuccess && (
           <button
             className="btn-primary w-full justify-center"
-            disabled={!mintReady || isPending}
-            onClick={handleMint}
+            disabled={!mintReady || isProcessing}
+            onClick={() => void handleMint()}
           >
-            {isPending
-              ? "Minting..."
+            {isProcessing
+              ? processingSteps.at(-1) || "Minting..."
               : `Mint ${"a" + baseToken} from ${amount || "0"} ${tokenSymbol}`}
           </button>
         )}
@@ -1574,27 +1783,21 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
           </button>
         )}
 
-        {action === "voucher" && voucherStep === "form" && (
+        {action === "voucher" && voucherStep === "form" && (mintsData?.mints?.length ?? 0) > 0 && (
           <button
             className="btn-primary w-full justify-center"
-            disabled={
-              !canSubmitAmount ||
-              !destination ||
-              !isValidCode ||
-              !vaultExists ||
-              chainDepth <= 0 ||
-              createVoucherMutation.isPending ||
-              mintMutation.isPending
-            }
-            onClick={handleCreateVoucher}
+            disabled={!selectedNonce || !destination || isProcessing || attachVoucherMutation.isPending}
+            onClick={() => void handleCreateVoucher()}
           >
-            {!vaultExists
-              ? "No vault, shield first"
-              : chainDepth <= 0
-                ? "OTS chain exhausted"
-                : mintMutation.isPending || createVoucherMutation.isPending
-                  ? "Creating..."
-                  : `Create ${amount || "0"} ${baseToken} Voucher`}
+            {isProcessing
+              ? processingSteps.at(-1) || "Signing..."
+              : attachVoucherMutation.isPending
+                ? "Storing..."
+                : !selectedNonce
+                  ? "Select aSOL first"
+                  : !destination
+                    ? "Enter recipient"
+                    : "Sign and Create Voucher"}
           </button>
         )}
         {action === "voucher" && voucherStep === "done" && (
@@ -1602,10 +1805,10 @@ export function ActionPanel({ config, onClose }: ActionPanelProps) {
             className="btn-secondary w-full justify-center"
             onClick={() => {
               setVoucherStep("form");
-              setVoucherJson("");
-              setAmount("");
-              setDestination(publicKey ?? "");
-              setVaultCode("");
+              setVoucherClaimUrl("");
+              setSelectedNonce("");
+              setDestination("");
+              void refetchMints();
             }}
           >
             New Voucher

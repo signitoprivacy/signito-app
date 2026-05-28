@@ -11,8 +11,6 @@ import {
   getGetVaultBalancesQueryKey,
   useGetTransactions,
   getGetTransactionsQueryKey,
-  useGetAirsignBalances,
-  getGetAirsignBalancesQueryKey,
 } from "@workspace/api-client-react";
 
 function StatBox({ label, value, sub }: { label: string; value: string; sub?: string }) {
@@ -29,28 +27,22 @@ export default function DashboardPage() {
   const { connected, publicKey } = useWallet();
 
   const { data: portfolio, isLoading: portfolioLoading } = useGetPortfolio(publicKey ?? "", {
-    query: { queryKey: getGetPortfolioQueryKey(publicKey ?? ""), enabled: !!publicKey, staleTime: 3_000, refetchInterval: 5_000 },
+    query: { queryKey: getGetPortfolioQueryKey(publicKey ?? ""), enabled: !!publicKey, staleTime: 0, refetchInterval: 3_000 },
   });
 
   const { data: vaultData, isLoading: vaultLoading } = useGetVaultBalances(publicKey ?? "", {
-    query: { queryKey: getGetVaultBalancesQueryKey(publicKey ?? ""), enabled: !!publicKey, staleTime: 3_000, refetchInterval: 5_000 },
-  });
-
-  const { data: airsignData, isLoading: airsignLoading } = useGetAirsignBalances(publicKey ?? "", {
-    query: { queryKey: getGetAirsignBalancesQueryKey(publicKey ?? ""), enabled: !!publicKey, staleTime: 3_000, refetchInterval: 5_000 },
+    query: { queryKey: getGetVaultBalancesQueryKey(publicKey ?? ""), enabled: !!publicKey, staleTime: 0, refetchInterval: 3_000 },
   });
 
   const { data: txData } = useGetTransactions(publicKey ?? "", {
-    query: { queryKey: getGetTransactionsQueryKey(publicKey ?? ""), enabled: !!publicKey, staleTime: 3_000, refetchInterval: 5_000 },
+    query: { queryKey: getGetTransactionsQueryKey(publicKey ?? ""), enabled: !!publicKey, staleTime: 0, refetchInterval: 3_000 },
   });
 
   const solBalance = portfolio?.solBalance ?? 0;
   const splTokens = portfolio?.tokens ?? [];
   const shieldedBalances = vaultData?.balances ?? [];
-  const airsignBalances = airsignData?.balances ?? [];
   const recentTx = txData?.transactions?.slice(0, 5) ?? [];
   const totalShielded = shieldedBalances.reduce((acc, b) => acc + (b.shieldedAmount ?? 0), 0);
-  const totalAirtoken = airsignBalances.reduce((acc, b) => acc + b.amount, 0);
 
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-white">
@@ -183,7 +175,7 @@ export default function DashboardPage() {
                       <div className="py-4 text-center">
                         <p className="text-[#888888] text-xs font-['Inter'] mb-2">No shielded assets</p>
                         <Link href="/app" className="text-[#FF6B00] text-xs font-['JetBrains_Mono'] hover:text-white transition-colors">
-                          Shield in SafeVault
+                          Shield in Shielded Vault
                         </Link>
                       </div>
                     )}
@@ -199,59 +191,22 @@ export default function DashboardPage() {
                   )}
                 </div>
 
-                {/* 3. airToken (AirSign escrow) */}
+                {/* 3. AirSign Escrow */}
                 <div className="card border-white/10">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
-                      <h2 className="font-['Space_Grotesk'] font-bold text-sm tracking-wider uppercase">airToken</h2>
-                      <span className="tag">aToken</span>
+                      <h2 className="font-['Space_Grotesk'] font-bold text-sm tracking-wider uppercase">AirSign</h2>
+                      <span className="tag">Escrow</span>
                     </div>
-                    {airsignLoading && <span className="text-[#888888] font-['JetBrains_Mono'] text-xs">Loading...</span>}
                   </div>
-
-                  <div className="space-y-1">
-                    {airsignBalances.map((b) => {
-                      const expired = b.expiresAt ? new Date(b.expiresAt).getTime() < Date.now() : false;
-                      return (
-                        <div key={b.nonce} className="flex items-center justify-between py-2.5 border-b border-[#1A1A1A]">
-                          <div className="flex items-center gap-2">
-                            <div className="w-5 h-5 rounded-full bg-white/10 border border-white/20 flex items-center justify-center">
-                              <span className="text-white font-bold" style={{ fontSize: "7px" }}>a</span>
-                            </div>
-                            <div>
-                              <span className="font-['Space_Grotesk'] font-semibold text-sm">{b.aToken}</span>
-                              {expired && (
-                                <span className="block text-red-400 text-[9px] font-['JetBrains_Mono']">expired</span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <span className={`font-['JetBrains_Mono'] text-sm ${expired ? "text-[#555]" : "text-white"}`}>
-                              {b.amount.toFixed(4)}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {!airsignLoading && airsignBalances.length === 0 && (
-                      <div className="py-4 text-center">
-                        <p className="text-[#888888] text-xs font-['Inter'] mb-2">No airTokens yet</p>
-                        <Link href="/app" className="text-white text-xs font-['JetBrains_Mono'] hover:text-[#FF6B00] transition-colors">
-                          Create AirSign voucher
-                        </Link>
-                      </div>
-                    )}
+                  <div className="py-4 text-center">
+                    <p className="text-[#888888] text-xs font-['JetBrains_Mono'] mb-2">
+                      On-chain escrow PDAs
+                    </p>
+                    <Link href="/app" className="text-[#FF6B00] text-xs font-['JetBrains_Mono'] hover:text-white transition-colors">
+                      Create AirSign voucher
+                    </Link>
                   </div>
-
-                  {airsignBalances.length > 0 && (
-                    <div className="mt-4 pt-3 border-t border-[#2A2A2A] flex justify-between">
-                      <span className="text-[#888888] text-xs font-['JetBrains_Mono']">In escrow</span>
-                      <span className="text-white text-xs font-['JetBrains_Mono'] font-bold">
-                        {totalAirtoken.toFixed(4)}
-                      </span>
-                    </div>
-                  )}
                 </div>
 
               </div>
@@ -268,7 +223,7 @@ export default function DashboardPage() {
                       <span className="tag tag-orange">OTS</span>
                     </div>
                     <span className="font-['Space_Grotesk'] font-bold text-white text-sm">Shield to Vault</span>
-                    <span className="text-[#888888] text-xs font-['Inter']">Deposit tokens into SafeVault</span>
+                    <span className="text-[#888888] text-xs font-['Inter']">Deposit tokens into Shielded Vault</span>
                   </Link>
                   <Link
                     href="/app"
@@ -306,9 +261,9 @@ export default function DashboardPage() {
                   sub="sToken types"
                 />
                 <StatBox
-                  label="airToken"
-                  value={airsignLoading ? "..." : `${airsignBalances.length}`}
-                  sub="vouchers pending"
+                  label="AirSign"
+                  value="--"
+                  sub="check escrow PDAs"
                 />
                 <StatBox
                   label="Transactions"
@@ -330,7 +285,7 @@ export default function DashboardPage() {
                   <div className="py-8 text-center border border-dashed border-[#2A2A2A] rounded">
                     <p className="text-[#888888] text-sm font-['Inter'] mb-2">No transactions yet</p>
                     <p className="text-[#888888] text-xs font-['JetBrains_Mono']">
-                      Start by shielding tokens in SafeVault
+                      Start by shielding tokens in Shielded Vault
                     </p>
                   </div>
                 ) : (

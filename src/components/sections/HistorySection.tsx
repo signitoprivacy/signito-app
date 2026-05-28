@@ -1,14 +1,16 @@
 import React from "react";
 import { useWallet } from "../../lib/wallet";
 import { useGetTransactions, getGetTransactionsQueryKey } from "@workspace/api-client-react";
+import { useCluster } from "../../main";
 
-function solscanUrl(sig: string): string | null {
+function orbUrl(sig: string): string | null {
   if (!sig || sig.startsWith("offchain:") || sig === "-") return null;
-  return `https://solscan.io/tx/${sig}?cluster=devnet`;
+  return `https://orbmarkets.io/tx/${sig}`;
 }
 
 export function HistorySection() {
   const { connected, publicKey } = useWallet();
+  const { cluster } = useCluster();
 
   const { data, isLoading } = useGetTransactions(publicKey || "", {
     query: { queryKey: getGetTransactionsQueryKey(publicKey || ""), enabled: !!publicKey, staleTime: 3_000, refetchInterval: 5_000 },
@@ -60,7 +62,7 @@ export function HistorySection() {
             </thead>
             <tbody>
               {txList.map((tx, i) => {
-                const url = solscanUrl(tx.signature);
+                const url = orbUrl(tx.signature);
                 return (
                   <tr
                     key={tx.signature}

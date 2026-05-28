@@ -69,10 +69,12 @@ export function HeroGlobe({
   light = false,
   baseFill = "#1A0800",
   frozen = false,
+  nodesOnly = false,
 }: {
   light?: boolean;
   baseFill?: string;
   frozen?: boolean;
+  nodesOnly?: boolean;
 }) {
   const angleRef = useRef(frozen ? 90 : 0);
   const hubAngleRef = useRef(0);
@@ -182,43 +184,47 @@ export function HeroGlobe({
         </radialGradient>
       </defs>
 
-      <circle cx={CX} cy={CY} r={R} fill={baseFill} />
-      <circle cx={CX} cy={CY} r={R} fill={`url(#${gradId})`} />
-      <circle cx={CX} cy={CY} r={R} fill={`url(#${rimId})`} />
-      <circle cx={CX} cy={CY} r={R} fill="none" stroke="#8090A8" strokeWidth="1.2" opacity="0.55" />
+      {!nodesOnly && (
+        <>
+          <circle cx={CX} cy={CY} r={R} fill={baseFill} />
+          <circle cx={CX} cy={CY} r={R} fill={`url(#${gradId})`} />
+          <circle cx={CX} cy={CY} r={R} fill={`url(#${rimId})`} />
+          <circle cx={CX} cy={CY} r={R} fill="none" stroke="#8090A8" strokeWidth="1.2" opacity="0.55" />
 
-      {LAT_LINES.map(lat => {
-        const laR = (lat * Math.PI) / 180;
-        const rx = R * Math.cos(laR);
-        const ry = rx * 0.18;
-        const cy2 = CY - R * Math.sin(laR);
-        if (rx < 5) return null;
-        return (
-          <ellipse key={`lat-${lat}`} cx={CX} cy={cy2} rx={rx} ry={ry}
-            fill="none" stroke="#6878A0" strokeWidth="0.6" opacity="0.22" />
-        );
-      })}
+          {LAT_LINES.map(lat => {
+            const laR = (lat * Math.PI) / 180;
+            const rx = R * Math.cos(laR);
+            const ry = rx * 0.18;
+            const cy2 = CY - R * Math.sin(laR);
+            if (rx < 5) return null;
+            return (
+              <ellipse key={`lat-${lat}`} cx={CX} cy={cy2} rx={rx} ry={ry}
+                fill="none" stroke="#6878A0" strokeWidth="0.6" opacity="0.22" />
+            );
+          })}
 
-      {edges.map(([i, j], k) => {
-        const a = visible[i];
-        const b = visible[j];
-        const avgZ = (a.z + b.z) / 2;
-        const op = Math.max(0.06, Math.min(0.28, 0.07 + (avgZ + 0.2) * 0.26));
-        return (
-          <line key={k}
-            x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-            stroke="#90A0C0" strokeWidth="0.8" opacity={op}
-          />
-        );
-      })}
+          {edges.map(([i, j], k) => {
+            const a = visible[i];
+            const b = visible[j];
+            const avgZ = (a.z + b.z) / 2;
+            const op = Math.max(0.06, Math.min(0.28, 0.07 + (avgZ + 0.2) * 0.26));
+            return (
+              <line key={k}
+                x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+                stroke="#90A0C0" strokeWidth="0.8" opacity={op}
+              />
+            );
+          })}
 
-      {hubLinks.map((l, i) => (
-        <line key={`hl-${i}`}
-          x1={l.hx} y1={l.hy} x2={l.nx} y2={l.ny}
-          stroke="#A0B0C8" strokeWidth="0.9" opacity={l.op}
-          strokeDasharray="5 5"
-        />
-      ))}
+          {hubLinks.map((l, i) => (
+            <line key={`hl-${i}`}
+              x1={l.hx} y1={l.hy} x2={l.nx} y2={l.ny}
+              stroke="#A0B0C8" strokeWidth="0.9" opacity={l.op}
+              strokeDasharray="5 5"
+            />
+          ))}
+        </>
+      )}
 
       {visible.map((n, i) => {
         const depthFront = Math.max(0, n.z);

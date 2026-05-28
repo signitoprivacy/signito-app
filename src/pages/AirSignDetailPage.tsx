@@ -1,17 +1,9 @@
 import React from "react";
 import { LandingNavBar } from "../components/LandingNavBar";
 import { Footer } from "../components/Footer";
-import sketchAirGap from "../assets/sketch-airsign-airgap.png";
-import signitoLogoUrl from "@assets/signito-logo-nobg.png";
+import { MountainDivider } from "../components/MountainDivider";
+import sketchAirGap from "../assets/sketch-airsign-airgap.jpg";
 
-const MountainDivider = () => (
-  <svg className="absolute top-0 left-0 w-full pointer-events-none"
-    style={{ transform: "translateY(-99%)", overflow: "visible" }}
-    viewBox="0 0 1440 120" preserveAspectRatio="none" fill="#FFFFFF"
-    overflow="visible" xmlns="http://www.w3.org/2000/svg">
-    <path d="M0,120 L0,90 L180,10 L360,80 L540,5 L720,75 L900,0 L1080,70 L1200,20 L1350,-130 L1440,-60 L1440,120 Z" />
-  </svg>
-);
 
 export default function AirSignDetailPage() {
   return (
@@ -22,7 +14,6 @@ export default function AirSignDetailPage() {
         {/* Hero - dark */}
         <div className="border-b border-[#2A2A2A] relative overflow-hidden min-h-screen flex flex-col">
           <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: "radial-gradient(circle, #2A2A2A 1px, transparent 1px)", backgroundSize: "36px 36px" }} />
-          <img src={signitoLogoUrl} alt="" aria-hidden className="absolute right-[-80px] bottom-[-80px] w-[520px] opacity-[0.035] pointer-events-none select-none" />
           <div className="max-w-[3200px] mx-auto px-8 md:px-16 pt-[20vh] pb-20 grid grid-cols-1 md:grid-cols-2 gap-12 items-center relative z-10 w-full">
             <div>
               <div className="inline-block font-['JetBrains_Mono'] text-[#FF6B00] text-xs tracking-[0.2em] uppercase border border-[#FF6B00]/30 px-3 py-1 mb-8">Feature 03</div>
@@ -86,6 +77,61 @@ export default function AirSignDetailPage() {
 
           <div className="border-b border-[#E0E0E0]">
             <div className="max-w-[1200px] mx-auto px-8 md:px-16 py-20">
+              <h2 className="font-['Space_Grotesk'] text-3xl font-bold mb-4">The key that never existed on any network</h2>
+              <p className="text-[#888888] font-['Inter'] text-sm mb-12 max-w-2xl">Most hardware wallets store the signing key on a device. AirSign derives it on demand from the vault code, uses it, and discards it. The key has no persistent form anywhere.</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-0 border-2 border-[#0A0A0A]">
+                {[
+                  {
+                    label: "01",
+                    title: "No stored key",
+                    body: "The Ed25519 keypair is derived fresh from your vault code each time you sign. It lives only in device memory during the signing operation. When the session ends, the key is gone. There is nothing to extract from disk.",
+                  },
+                  {
+                    label: "02",
+                    title: "No network exposure",
+                    body: "Signing happens on an offline device. The private key material is computed in memory on a machine that has never touched the internet during the signing session. There is no network path for the key to travel.",
+                  },
+                  {
+                    label: "03",
+                    title: "Two secrets required",
+                    body: "To forge a voucher you need the vault code. To redeem a voucher you need the on-chain signature to match the PDA-bound key. Stealing the private key of the redeeming wallet does nothing because the voucher authorizes a specific destination.",
+                  },
+                ].map((item, i) => (
+                  <div key={item.label} className={`p-10 ${i < 2 ? "border-r-2 border-[#0A0A0A]" : ""}`}>
+                    <div className="font-['JetBrains_Mono'] text-[#FF6B00] text-xs mb-3">{item.label}</div>
+                    <h3 className="font-['Space_Grotesk'] font-bold text-[#0A0A0A] text-xl mb-4">{item.title}</h3>
+                    <p className="text-[#555555] font-['Inter'] text-sm leading-relaxed">{item.body}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-6 border border-[#E0E0E0] bg-[#F9F9F9] px-8 py-6">
+                <div className="font-['JetBrains_Mono'] text-xs text-[#888888] mb-3">ATTACK SURFACE COMPARISON</div>
+                <div className="grid grid-cols-2 gap-8 font-['Inter'] text-sm">
+                  <div>
+                    <div className="font-bold text-[#0A0A0A] mb-2">Standard hot wallet signing</div>
+                    <ul className="space-y-1 text-[#CC3300] text-xs">
+                      <li>Key stored on connected device</li>
+                      <li>Key accessible to any malware on that machine</li>
+                      <li>Key transmitted when browser extension is active</li>
+                      <li>Compromised device = compromised key</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <div className="font-bold text-[#0A0A0A] mb-2">AirSign offline signing</div>
+                    <ul className="space-y-1 text-[#0A6B00] text-xs">
+                      <li>Key derived on demand from vault code</li>
+                      <li>Key never exists on a network-connected machine</li>
+                      <li>Key never transmitted anywhere</li>
+                      <li>Compromised online device cannot reach the signing key</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-b border-[#E0E0E0]">
+            <div className="max-w-[1200px] mx-auto px-8 md:px-16 py-20">
               <h2 className="font-['Space_Grotesk'] text-3xl font-bold mb-12">Technical specifications</h2>
               <div className="border border-[#E0E0E0] font-['JetBrains_Mono'] text-sm divide-y divide-[#E0E0E0]">
                 {[
@@ -96,6 +142,7 @@ export default function AirSignDetailPage() {
                   ["Network requirement", "None for signing, online only for redemption"],
                   ["Expiry", "Configurable per voucher at sign time"],
                   ["Replay protection", "Nullifier hash stored on-chain after first redemption"],
+                  ["Protocol fee", "0.15% per redemption, enforced on-chain"],
                 ].map(([k, v]) => (
                   <div key={k} className="flex justify-between px-6 py-4">
                     <span className="text-[#888888]">{k}</span>

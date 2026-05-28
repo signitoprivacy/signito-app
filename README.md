@@ -2,11 +2,12 @@
 
 **Website:** [signito.org](https://signito.org)
 
-Signito Shield — non-custodial transaction privacy dApp on Solana.
+Signito Shield -- non-custodial transaction privacy dApp on Solana and Base chain.
 
-**Program ID:** `9PibgJMUa3zXVd7YWJEJ8UQ14A7z2J3qZ7QDvRW38XeD`
+**Solana Program:** `HyciDEYB9hXdmmLMexTHv2QYDaJmuZr1AF7sipBbVLLH` (mainnet, OtterSec verified)
+**Base Sepolia Pool:** `0x8C7Eeb11C7c8D58b0d12A772B146313aaAAEaBdb`
 
-Built with **React 18 + Vite**. All signing done via Phantom wallet. RPC calls proxied server-side — the Helius API key is never exposed to the browser.
+Built with React 18 + Vite + Tailwind CSS v4. Solana signing via Phantom. Base chain via MetaMask (window.ethereum). All RPC calls proxied server-side.
 
 ---
 
@@ -14,99 +15,29 @@ Built with **React 18 + Vite**. All signing done via Phantom wallet. RPC calls p
 
 | Feature | Description |
 |---|---|
-| **SafeVault** | Shield SOL into a non-custodial vault using a passphrase. Withdraw anytime with your vault code — nothing stored server-side. |
-| **StealthSend** | Send SOL to a fresh address with no on-chain link between sender and recipient. |
-| **AirSign** | Issue offline Ed25519 vouchers shareable via QR or link. Recipient claims without internet at issuance time. |
+| **SafeVault** | Shield SOL/ETH using a vault code. OTS hash-chain withdrawal. |
+| **StealthSend** | Deposit into shared privacy pool, withdraw to fresh address |
+| **AirSign** | Offline ECDSA voucher signing and QR delivery |
+| **Chain Selector** | Switch between Solana and Base chain |
+| **Decoy Mix** | 20 phantom accounts burn alongside every real unshield |
 
----
+## Stack
 
-## Pages
+- React 18, Vite, TypeScript 5.9
+- Tailwind CSS v4 (@tailwindcss/vite)
+- wouter routing
+- @tanstack/react-query
+- viem (Base chain)
+- @reown/appkit (WalletConnect)
 
-| Route | Description |
+## Key Files
+
+| Path | Description |
 |---|---|
-| `/` | Landing — product overview, stats |
-| `/app` | Dashboard — wallet overview, shielded balances |
-| `/app/vault` | SafeVault — shield and unshield SOL |
-| `/app/stealth` | StealthSend — anonymous deposit and withdrawal |
-| `/app/airsign` | AirSign — create offline vouchers |
-| `/app/airsign/:nonce` | Voucher status and claim tracking |
-| `/app/claim/:nonce` | Recipient claim page |
-| `/app/history` | Full transaction history |
-| `/app/portfolio` | On-chain token balances |
-| `/app/status` | API and RPC health checks |
-| `/app/learn/*` | Protocol education articles |
-
----
-
-## Project Structure
-
-```
-signito-app/
-  src/
-    pages/          Route-level page components
-    components/     Shared UI components (NavBar, Sidebar, etc.)
-    lib/
-      ots.ts        PBKDF2 + SHA-256 OTS chain derivation (client-side only)
-      wallet.tsx    Phantom wallet connection
-    index.css       Global styles (Tailwind CSS v4)
-  public/           Static assets (logo, token images, OG image)
-  lib/
-    api-client-react/   Generated React Query hooks
-```
-
----
-
-## Tech Stack
-
-| Package | Role |
-|---|---|
-| React 18 + Vite | UI framework and build tool |
-| Tailwind CSS v4 | Styling |
-| TanStack React Query | Data fetching and caching |
-| Wouter | Client-side routing |
-| @solana/web3.js | Solana RPC and transaction building |
-| @solana/wallet-adapter | Phantom wallet connection |
-
----
-
-## Getting Started
-
-```bash
-pnpm install
-
-# Set environment variables
-echo "VITE_API_URL=https://api.signito.org" > .env
-
-pnpm dev
-```
-
-## Build for Production
-
-```bash
-pnpm build
-# Output: dist/
-```
-
----
-
-## Environment Variables
-
-| Variable | Description |
-|---|---|
-| `VITE_API_URL` | URL of the signito-api server (e.g. `https://api.signito.org`) |
-
----
-
-## Related Repositories
-
-| Repo | Description |
-|---|---|
-| [signito-programs](https://github.com/signitoprivacy/signito-programs) | On-chain Anchor/Rust program |
-| [signito-api](https://github.com/signitoprivacy/signito-api) | Backend API server |
-| [signito-docs](https://github.com/signitoprivacy/signito-docs) | Protocol documentation |
-
----
-
-## License
-
-MIT
+| `src/lib/base-ots.ts` | Base chain OTS derivation (keccak256 chain) |
+| `src/lib/base-client.ts` | Base chain API client |
+| `src/lib/evm-wallet.tsx` | MetaMask wallet context (no wagmi) |
+| `src/lib/ots.ts` | Solana OTS derivation (PBKDF2 + keccak256) |
+| `src/lib/wallet.tsx` | Solana wallet context |
+| `src/pages/BasePortfolioPage.tsx` | Base chain vault UI |
+| `src/components/ChainSelector.tsx` | Solana/Base toggle |

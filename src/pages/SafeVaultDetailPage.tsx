@@ -1,17 +1,9 @@
 import React from "react";
 import { LandingNavBar } from "../components/LandingNavBar";
 import { Footer } from "../components/Footer";
-import sketchSafeVault from "../assets/sketch-safevault-chain.png";
-import signitoLogoUrl from "@assets/signito-logo-nobg.png";
+import { MountainDivider } from "../components/MountainDivider";
+import sketchSafeVault from "../assets/sketch-safevault-chain.jpg";
 
-const MountainDivider = () => (
-  <svg className="absolute top-0 left-0 w-full pointer-events-none"
-    style={{ transform: "translateY(-99%)", overflow: "visible" }}
-    viewBox="0 0 1440 120" preserveAspectRatio="none" fill="#FFFFFF"
-    overflow="visible" xmlns="http://www.w3.org/2000/svg">
-    <path d="M0,120 L0,90 L180,10 L360,80 L540,5 L720,75 L900,0 L1080,70 L1200,20 L1350,-130 L1440,-60 L1440,120 Z" />
-  </svg>
-);
 
 export default function SafeVaultDetailPage() {
   return (
@@ -22,13 +14,12 @@ export default function SafeVaultDetailPage() {
         {/* Hero - dark */}
         <div className="border-b border-[#2A2A2A] relative overflow-hidden min-h-screen flex flex-col">
           <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: "radial-gradient(circle, #2A2A2A 1px, transparent 1px)", backgroundSize: "36px 36px" }} />
-          <img src={signitoLogoUrl} alt="" aria-hidden className="absolute right-[-80px] bottom-[-80px] w-[520px] opacity-[0.035] pointer-events-none select-none" />
           <div className="max-w-[3200px] mx-auto px-8 md:px-16 pt-[20vh] pb-20 grid grid-cols-1 md:grid-cols-2 gap-12 items-center relative z-10 w-full">
             <div>
               <div className="inline-block font-['JetBrains_Mono'] text-[#FF6B00] text-xs tracking-[0.2em] uppercase border border-[#FF6B00]/30 px-3 py-1 mb-8">Feature 01</div>
-              <h1 className="font-['Space_Grotesk'] text-5xl md:text-7xl font-bold mb-6 leading-tight">SafeVault</h1>
+              <h1 className="font-['Space_Grotesk'] text-5xl md:text-7xl font-bold mb-6 leading-tight">Shielded Vault</h1>
               <p className="text-[#888888] font-['Inter'] text-lg max-w-xl leading-relaxed mb-6">
-                SafeVault lets you deposit SPL tokens behind a one-time secret chain. To withdraw, you reveal one step in the chain. Your private key is never involved. Even if someone steals your wallet key, they cannot drain the vault without knowing your vault code.
+                Shielded Vault lets you deposit SPL tokens behind a one-time secret chain. To withdraw, you reveal one step in the chain. Your private key is never involved. Even if someone steals your wallet key, they cannot drain the vault without knowing your vault code.
               </p>
               <p className="text-[#555555] font-['Inter'] text-sm leading-relaxed">
                 Every vault generates a chain of 32 single-use credentials from your vault code using PBKDF2. Each withdrawal consumes the next credential in the chain. Once used, it cannot be reused.
@@ -92,7 +83,7 @@ export default function SafeVaultDetailPage() {
             <div className="max-w-[1200px] mx-auto px-8 md:px-16 py-20">
               <h2 className="font-['Space_Grotesk'] text-3xl font-bold mb-12">Technical specifications</h2>
               <div className="border border-[#E0E0E0] font-['JetBrains_Mono'] text-sm divide-y divide-[#E0E0E0]">
-                {[["Hash function","PBKDF2-SHA256"],["Chain depth","32 pre-images per vault"],["Token support","Any SPL token (Token-2022 compatible)"],["Withdrawal target","Any Solana address, chosen at withdrawal time"],["Key involvement","None, private key not used for withdrawals"],["On-chain state","Leaf hashes, deposit amounts, consumed index"],["Vault code storage","Never stored, only used locally to derive chain"]].map(([k,v]) => (
+                {[["Hash function","PBKDF2-SHA256"],["Chain depth","32 pre-images per vault"],["Token support","Any SPL token (Token-2022 compatible)"],["Withdrawal target","Any Solana address, chosen at withdrawal time"],["Key involvement","None, private key not used for withdrawals"],["On-chain state","Leaf hashes, deposit amounts, consumed index"],["Vault code storage","Never stored, only used locally to derive chain"],["Protocol fee","0.15% per withdrawal, enforced on-chain"]].map(([k,v]) => (
                   <div key={k} className="flex justify-between px-6 py-4">
                     <span className="text-[#888888]">{k}</span>
                     <span className="text-[#555555] text-right max-w-xs">{v}</span>

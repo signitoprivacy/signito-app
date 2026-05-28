@@ -3,12 +3,13 @@ import { Link } from "wouter";
 import { LandingNavBar } from "../components/LandingNavBar";
 import { Footer } from "../components/Footer";
 import { HeroGlobe } from "../components/HeroGlobe";
+import { PrivacyFlowDiagram } from "../components/PrivacyFlowDiagram";
 import { useGetPlatformStats } from "@workspace/api-client-react";
 import signitoLogoUrl from "@assets/signito-logo-nobg.png";
-import sketchStep01 from "../assets/sketch-step01-wallet.png";
-import sketchStep02 from "../assets/sketch-step02-chain.png";
-import sketchStep03 from "../assets/sketch-step03-paths.png";
-import sketchStep04 from "../assets/sketch-step04-withdraw.png";
+import sketchStep01 from "../assets/sketch-step01-wallet.jpg";
+import sketchStep02 from "../assets/sketch-step02-chain.jpg";
+import sketchStep03 from "../assets/sketch-step03-paths.jpg";
+import sketchStep04 from "../assets/sketch-step04-withdraw.jpg";
 
 export default function LandingPage() {
   const { data: platformStats } = useGetPlatformStats();
@@ -43,62 +44,25 @@ export default function LandingPage() {
                 <h1 className="font-['Space_Grotesk'] text-4xl md:text-5xl lg:text-[56px] font-bold mb-3 tracking-tight leading-tight">
                   Signito Makes<br />Every Signature<span className="text-[#FF6B00]"> Incognito</span>
                 </h1>
-                <p className="text-[#888888] text-lg mb-12 max-w-lg">
-                  Signito is a non-custodial privacy protocol on Solana that lets you shield SPL assets, send transactions anonymously through zero-knowledge proofs, and sign vouchers offline without ever exposing your wallet identity.
+                <p className="text-[#888888] text-lg mb-6">
+                  Signito is a non-custodial transaction privacy protocol on Solana and Base. Shield assets behind a one-time secret chain, send transactions through zero-knowledge proofs, and sign vouchers offline without ever exposing your wallet identity.
                 </p>
+                <div className="flex items-start gap-3 mb-12 border border-[#2A2A2A] px-4 py-3">
+                  <span className="font-['JetBrains_Mono'] text-[#FF6B00] text-xs shrink-0 mt-0.5">OTS</span>
+                  <p className="font-['JetBrains_Mono'] text-[#666666] text-xs leading-relaxed">
+                    Private key compromised? Your shielded funds cannot be moved without the vault code. Two independent secrets. Two separate walls.
+                  </p>
+                </div>
                 <div className="flex flex-wrap items-center gap-4">
                   <Link href="/app" className="btn-primary" data-testid="button-launch-app">Launch App</Link>
-                  <Link href="/docs/" className="btn-secondary" data-testid="button-read-docs">Read the docs</Link>
+                  <a href="/docs/" className="btn-secondary" data-testid="button-read-docs">Read the docs</a>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Bottom: 3 feature cards */}
-          <div className="w-full pt-10 pb-6 relative z-10">
-            <div className="max-w-[1200px] mx-auto px-8 grid grid-cols-1 md:grid-cols-3 gap-4">
-
-              <Link href="/features/safevault" className="hero-news-card group no-underline" data-testid="card-safevault">
-                <div className="hero-news-thumb bg-[#FF6B00]/10 border border-[#FF6B00]/30 flex items-center justify-center">
-                  <span className="font-['JetBrains_Mono'] text-[#FF6B00] font-bold text-lg">OTS</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-['Space_Grotesk'] font-bold text-white text-sm mb-1 group-hover:text-[#FF6B00] transition-colors">SafeVault: OTS Protocol Shield</p>
-                  <p className="text-[#888888] text-xs leading-snug">Deposit SPL tokens behind a PBKDF2 hash chain. Withdraw with OTS reveals, never your private key.</p>
-                  <span className="text-[#FF6B00] text-xs font-['Space_Grotesk'] font-bold mt-2 inline-flex items-center gap-1">
-                    Open SafeVault <span aria-hidden="true">›</span>
-                  </span>
-                </div>
-              </Link>
-
-              <Link href="/features/stealthsend" className="hero-news-card group no-underline" data-testid="card-stealthsend">
-                <div className="hero-news-thumb bg-white/5 border border-white/15 flex items-center justify-center">
-                  <span className="font-['JetBrains_Mono'] text-white font-bold text-lg">ZK</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-['Space_Grotesk'] font-bold text-white text-sm mb-1 group-hover:text-[#FF6B00] transition-colors">StealthSend: ZK Privacy Pool</p>
-                  <p className="text-[#888888] text-xs leading-snug">Deposit to the anonymity pool and withdraw to a fresh address using Groth16 zero-knowledge proofs.</p>
-                  <span className="text-[#FF6B00] text-xs font-['Space_Grotesk'] font-bold mt-2 inline-flex items-center gap-1">
-                    Open StealthSend <span aria-hidden="true">›</span>
-                  </span>
-                </div>
-              </Link>
-
-              <Link href="/features/airsign" className="hero-news-card group no-underline" data-testid="card-airsign">
-                <div className="hero-news-thumb bg-[#2A2A2A] border border-[#3A3A3A] flex items-center justify-center">
-                  <span className="font-['JetBrains_Mono'] text-[#888888] font-bold text-xs tracking-widest">AIR</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-['Space_Grotesk'] font-bold text-white text-sm mb-1 group-hover:text-[#FF6B00] transition-colors">AirSign: Offline Vouchers</p>
-                  <p className="text-[#888888] text-xs leading-snug">Generate Ed25519 signatures on an air-gapped device. Redeem vouchers on-chain when back online.</p>
-                  <span className="text-[#FF6B00] text-xs font-['Space_Grotesk'] font-bold mt-2 inline-flex items-center gap-1">
-                    Open AirSign <span aria-hidden="true">›</span>
-                  </span>
-                </div>
-              </Link>
-
-            </div>
-          </div>
+          {/* Bottom: animated privacy flow diagram */}
+          <PrivacyFlowDiagram />
 
         </div>
 
@@ -239,7 +203,7 @@ export default function LandingPage() {
                   Shield funds using a PBKDF2 hash chain. Reveal pre-images to authorize transfers without exposing your private key.
                 </p>
                 <Link href="/app" className="text-[#0A0A0A] font-['Space_Grotesk'] font-bold text-sm underline underline-offset-4 decoration-[#AAAAAA] hover:decoration-[#FF6B00] transition-colors">
-                  Open SafeVault
+                  Open Shielded Vault
                 </Link>
               </div>
 
@@ -266,6 +230,91 @@ export default function LandingPage() {
               </div>
 
             </div>
+          </div>
+
+          {/* Security section */}
+          <div className="max-w-[1200px] mx-auto px-8 mt-20 relative z-10">
+
+            {/* Headline */}
+            <div className="border-b-2 border-[#0A0A0A] pb-8 mb-0">
+              <span className="font-['JetBrains_Mono'] text-[#FF6B00] text-xs tracking-[0.2em] uppercase block mb-3">Security model</span>
+              <h2 className="font-['Space_Grotesk'] text-3xl md:text-4xl font-bold text-[#0A0A0A] leading-tight">
+                Privacy is not enough.<br />Shielded Vault adds a second wall.
+              </h2>
+            </div>
+
+            {/* 2-col header row, desktop only */}
+            <div className="hidden md:grid grid-cols-2 border-b-2 border-[#0A0A0A]">
+              <div className="px-6 py-4 border-r-2 border-[#0A0A0A]">
+                <span className="font-['JetBrains_Mono'] text-xs text-[#888888] uppercase tracking-widest">Standard wallet</span>
+              </div>
+              <div className="px-6 py-4">
+                <span className="font-['JetBrains_Mono'] text-xs text-[#FF6B00] uppercase tracking-widest">Signito Shielded Vault</span>
+              </div>
+            </div>
+
+            {/* Attack scenario rows */}
+            {[
+              {
+                attack: "Phishing: private key extracted by a fake site",
+                wallet:  "Full signing authority. All funds can be drained instantly.",
+                vault:   "Vault code was never typed on that site. Attacker has the key, not the chain.",
+              },
+              {
+                attack: "Malware: clipboard or keylogger captures your seed phrase",
+                wallet:  "Seed gives full key access. Balance is gone.",
+                vault:   "Vault code is derived locally from memory, never stored or transmitted.",
+              },
+              {
+                attack: "Exchange hack: your private key appears in a leaked database",
+                wallet:  "Anyone with the key can sweep immediately.",
+                vault:   "Shielded balance requires sha256 chain reconstruction. Key alone is worthless.",
+              },
+              {
+                attack: "Compromised device: signing authority taken over by an attacker",
+                wallet:  "Attacker signs any transaction without your knowledge.",
+                vault:   "Every withdrawal requires the next OTS pre-image. No pre-image, no transfer.",
+              },
+            ].map((row, i) => (
+              <div key={i} className="border-b border-[#D0D0D0] group hover:bg-[#FAFAFA] transition-colors">
+                {/* Attack label, full width on both */}
+                <div className="px-4 md:px-6 pt-4 pb-2 border-b border-[#E8E8E8]">
+                  <p className="font-['JetBrains_Mono'] text-[#888888] text-xs leading-relaxed uppercase tracking-wide">{row.attack}</p>
+                </div>
+                {/* Mobile: stacked, Desktop: 2-col */}
+                <div className="grid grid-cols-1 md:grid-cols-2">
+                  <div className="px-4 md:px-6 py-4 md:border-r-2 border-[#0A0A0A] border-b md:border-b-0 border-[#E8E8E8]">
+                    <p className="font-['JetBrains_Mono'] text-[#888888] text-[10px] uppercase tracking-widest mb-1 md:hidden">Standard wallet</p>
+                    <p className="font-['Inter'] text-[#CC3300] text-sm leading-relaxed">{row.wallet}</p>
+                  </div>
+                  <div className="px-4 md:px-6 py-4">
+                    <p className="font-['JetBrains_Mono'] text-[#FF6B00] text-[10px] uppercase tracking-widest mb-1 md:hidden">Signito Shielded Vault</p>
+                    <p className="font-['Inter'] text-[#0A6B00] text-sm leading-relaxed">{row.vault}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {/* Footer callout */}
+            <div className="border-2 border-[#0A0A0A] mt-0 grid grid-cols-1 md:grid-cols-2" style={{ boxShadow: "4px 4px 0px #FF6B00" }}>
+              <div className="px-8 py-6 border-b-2 md:border-b-0 md:border-r-2 border-[#0A0A0A]">
+                <p className="font-['JetBrains_Mono'] text-[#FF6B00] text-xs uppercase tracking-widest mb-3">Required to drain a Shielded Vault</p>
+                <div className="flex flex-wrap gap-3">
+                  <span className="font-['JetBrains_Mono'] text-sm border-2 border-[#0A0A0A] px-3 py-1.5 text-[#0A0A0A]">private key</span>
+                  <span className="font-['JetBrains_Mono'] text-sm text-[#888888] self-center">+</span>
+                  <span className="font-['JetBrains_Mono'] text-sm border-2 border-[#FF6B00] px-3 py-1.5 text-[#0A0A0A]">vault code</span>
+                  <span className="font-['JetBrains_Mono'] text-sm text-[#888888] self-center">+</span>
+                  <span className="font-['JetBrains_Mono'] text-sm border-2 border-[#0A0A0A] px-3 py-1.5 text-[#0A0A0A]">chain depth</span>
+                </div>
+              </div>
+              <div className="px-8 py-6">
+                <p className="font-['JetBrains_Mono'] text-[#888888] text-xs uppercase tracking-widest mb-3">What the vault code is</p>
+                <p className="font-['Inter'] text-[#333333] text-sm leading-relaxed">
+                  An 8-character code you choose and memorize. It is never stored, never transmitted, never signed. Only you know it. Even Signito cannot recover it.
+                </p>
+              </div>
+            </div>
+
           </div>
 
           {/* Down arrow: click to jump to section 3 */}
@@ -336,13 +385,13 @@ export default function LandingPage() {
                 <div className="md:order-2">
                   <span className="font-['JetBrains_Mono'] text-[#FF6B00] text-6xl font-bold block mb-8 leading-none">02</span>
                   <h3 className="font-['Space_Grotesk'] text-2xl md:text-3xl font-bold text-white mb-5 group-hover:text-[#FF6B00] transition-colors leading-tight">
-                    Shield assets into SafeVault
+                    Shield assets into Shielded Vault
                   </h3>
                   <p className="text-[#666666] leading-relaxed mb-8">
-                    Deposit SOL or any SPL token into a SafeVault. The protocol derives a PBKDF2 hash chain from your vault code and mints a sToken receipt (sSOL, sUSDC). The on-chain balance is publicly visible, but every withdrawal requires the next OTS pre-image from the chain.
+                    Deposit SOL or any SPL token into a Shielded Vault. The protocol derives a PBKDF2 hash chain from your vault code and mints a sToken receipt (sSOL, sUSDC). The on-chain balance is publicly visible, but every withdrawal requires the next OTS pre-image from the chain.
                   </p>
                   <Link href="/app" className="font-['Space_Grotesk'] text-sm font-bold text-[#FF6B00] hover:text-white transition-colors no-underline">
-                    Open SafeVault &rsaquo;
+                    Open Shielded Vault &rsaquo;
                   </Link>
                 </div>
                 <div className="md:order-1 border border-[#1A1A1A] overflow-hidden">
@@ -360,11 +409,11 @@ export default function LandingPage() {
                     Shield, send, or sign privately
                   </h3>
                   <p className="text-[#666666] leading-relaxed mb-8">
-                    Three privacy paths depending on your use case. Reveal an OTS pre-image for a SafeVault withdrawal. Submit a Groth16 ZK proof to StealthSend funds to a fresh address with no on-chain link. Or sign an Ed25519 offline voucher via AirSign and deliver it by QR code without internet.
+                    Three privacy paths depending on your use case. Reveal an OTS pre-image for a Shielded Vault withdrawal. Submit a Groth16 ZK proof to StealthSend funds to a fresh address with no on-chain link. Or sign an Ed25519 offline voucher via AirSign and deliver it by QR code without internet.
                   </p>
                   <div className="space-y-4">
                     {[
-                      ["SafeVault", "OTS pre-image reveal"],
+                      ["Shielded Vault", "OTS pre-image reveal"],
                       ["StealthSend", "Groth16 ZK proof"],
                       ["AirSign", "Ed25519 offline signature"],
                     ].map(([label, detail]) => (
@@ -425,12 +474,12 @@ export default function LandingPage() {
                 One protocol. <span className="text-[#FF6B00]">Zero custody.</span>
               </h2>
               <p className="text-[#555555] mt-4 font-['Inter'] text-base max-w-4xl mx-auto text-balance">
-                Every vault created, every transaction shielded, every one-time code consumed, and every unit of value held in custody is pulled live from the Signito protocol on Solana. There is no caching, no estimation, and no interpolation. What you see below is the exact state of the network, updated continuously as blocks confirm.
+                Every vault created, every transaction shielded, every one-time code consumed, and every unit of value held in custody is pulled live from the Signito protocol across Solana and Base. There is no caching, no estimation, and no interpolation. What you see below is the exact state of the network, updated continuously as blocks confirm.
               </p>
             </div>
 
             {/* Stats 2x2 grid */}
-            <div className="grid grid-cols-2 gap-x-8 gap-y-10 mb-24 justify-items-center text-center max-w-xl mx-auto w-full">
+            <div className="grid grid-cols-2 gap-x-8 gap-y-10 mb-10 justify-items-center text-center max-w-xl mx-auto w-full">
               <div>
                 <div className="font-['Space_Grotesk'] text-[#FF6B00] text-7xl md:text-8xl font-bold mb-4 leading-none">
                   {platformStats ? platformStats.totalVaults.toLocaleString() : "--"}
@@ -450,10 +499,34 @@ export default function LandingPage() {
                 <div className="font-['Inter'] text-[#333333] text-lg">transactions unshielded</div>
               </div>
               <div>
-                <div className="font-['Space_Grotesk'] text-[#FF6B00] text-7xl md:text-8xl font-bold mb-4 leading-none">
-                  {platformStats ? `$${platformStats.totalVaultValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}` : "--"}
+                <div className="font-['Space_Grotesk'] text-[#FF6B00] text-5xl md:text-6xl font-bold leading-none whitespace-nowrap">
+                  {platformStats
+                    ? `$${platformStats.totalVaultValueUsd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+                    : "--"}
                 </div>
-                <div className="font-['Inter'] text-[#333333] text-lg">total value in vaults</div>
+                {platformStats && (
+                  <div className="font-['Inter'] text-[#888888] text-sm mt-1 mb-3">
+                    {platformStats.totalVaultValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SOL
+                  </div>
+                )}
+                <div className="font-['Inter'] text-[#333333] text-lg">total volume shielded</div>
+              </div>
+            </div>
+
+            {/* Protocol revenue: centered below 2x2 grid */}
+            <div className="flex justify-center mb-24">
+              <div className="text-center">
+                <div className="font-['Space_Grotesk'] text-[#FF6B00] text-7xl md:text-8xl font-bold mb-4 leading-none">
+                  {platformStats
+                    ? `$${platformStats.protocolRevenueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    : "--"}
+                </div>
+                {platformStats && (
+                  <div className="font-['Inter'] text-[#888888] text-sm mt-1 mb-3">
+                    {platformStats.protocolRevenue.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })} SOL
+                  </div>
+                )}
+                <div className="font-['Inter'] text-[#333333] text-lg">protocol revenue collected</div>
               </div>
             </div>
 
@@ -484,18 +557,18 @@ export default function LandingPage() {
                 className="bg-white border-2 border-[#0A0A0A] grid grid-cols-1 md:grid-cols-2"
                 style={{ boxShadow: "8px 8px 0px #FF6B00" }}
               >
-                {/* Left */}
+                {/* Left: text */}
                 <div className="p-10 md:p-14 border-b-2 md:border-b-0 md:border-r-2 border-[#0A0A0A]">
                   <span className="tag tag-orange mb-8">CRACK CHALLENGE</span>
                   <h2 className="font-['Space_Grotesk'] text-3xl md:text-5xl font-bold text-[#0A0A0A] mb-6 leading-tight">
                     The private key is public. The vault is funded.<br />
                     <span className="text-[#FF6B00]">If you can drain it, it's yours.</span>
                   </h2>
-                  <p className="text-[#555555] leading-relaxed mb-8 text-sm">
-                    We deployed a SafeVault on Solana, loaded it with real funds, and published the wallet private key publicly. The key gives you full signing authority. But the vault enforces an OTS Protocol: every withdrawal requires the next pre-image in the PBKDF2 hash sequence.
+                  <p className="text-[#555555] leading-relaxed mb-5 text-sm">
+                    Signito is built around two promises: privacy and security. Privacy means your transactions cannot be traced back to you. Security means even if your wallet is fully compromised, your funds stay protected. Most protocols offer one or the other. Signito was designed to deliver both at the same time.
                   </p>
                   <p className="text-[#555555] leading-relaxed mb-10 text-sm">
-                    Without the vault code seed, you cannot reconstruct the chain. The funds sit there, accessible to anyone who can break the OTS scheme. No one has.
+                    The program is open source, publicly available on GitHub, and independently verified by OtterSec. We loaded real SOL into a vault, then published the private key here for everyone. A private key normally means full control. Not here. Before releasing a single lamport, the Solana program demands a vault code that only the depositor knows.
                   </p>
                   <Link href="/crack" className="btn-primary" data-testid="button-crack-challenge">Take the Challenge</Link>
                 </div>
@@ -557,6 +630,7 @@ export default function LandingPage() {
                     </div>
                   </div>
                 </div>
+
               </div>
             </div>
           </div>

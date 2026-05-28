@@ -2,14 +2,12 @@ import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ScrollToTop } from "@/components/ScrollToTop";
 
 import LandingPage from "./pages/LandingPage";
 import StatusPage from "./pages/StatusPage";
-import CrackPage from "./pages/CrackPage";
+import CrackChallengePage from "./pages/CrackChallengePage";
 import PortfolioPage from "./pages/PortfolioPage";
-import VaultPage from "./pages/VaultPage";
-import StealthPage from "./pages/StealthPage";
-import AirSignPage from "./pages/AirSignPage";
 import HistoryPage from "./pages/HistoryPage";
 import SafeVaultDetailPage from "./pages/SafeVaultDetailPage";
 import StealthSendDetailPage from "./pages/StealthSendDetailPage";
@@ -25,6 +23,8 @@ import DevQuickStartPage from "./pages/DevQuickStartPage";
 import DevApiReferencePage from "./pages/DevApiReferencePage";
 import DevOpenApiPage from "./pages/DevOpenApiPage";
 import ClaimPage from "./pages/ClaimPage";
+import { BatchZkPage, PrivateSwapPage, PrivateDexPage } from "./pages/ComingSoonPage";
+import BasePortfolioPage from "./pages/BasePortfolioPage";
 import NotFound from "./pages/not-found";
 
 const queryClient = new QueryClient();
@@ -34,12 +34,12 @@ function Router() {
     <Switch>
       <Route path="/" component={LandingPage} />
       <Route path="/status" component={StatusPage} />
-      <Route path="/crack" component={CrackPage} />
+      <Route path="/crack" component={CrackChallengePage} />
       <Route path="/app" component={PortfolioPage} />
-      <Route path="/app/vault" component={VaultPage} />
-      <Route path="/app/stealth" component={StealthPage} />
-      <Route path="/app/airsign" component={AirSignPage} />
       <Route path="/app/history" component={HistoryPage} />
+      <Route path="/app/batch-zk" component={BatchZkPage} />
+      <Route path="/app/private-swap" component={PrivateSwapPage} />
+      <Route path="/app/private-dex" component={PrivateDexPage} />
       <Route path="/features/safevault" component={SafeVaultDetailPage} />
       <Route path="/features/stealthsend" component={StealthSendDetailPage} />
       <Route path="/features/airsign" component={AirSignDetailPage} />
@@ -54,6 +54,7 @@ function Router() {
       <Route path="/developers/api-reference" component={DevApiReferencePage} />
       <Route path="/developers/openapi" component={DevOpenApiPage} />
       <Route path="/claim/:nonce" component={ClaimPage} />
+      <Route path="/app/base" component={BasePortfolioPage} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -64,6 +65,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+          <ScrollToTop />
           <Router />
         </WouterRouter>
         <Toaster />
